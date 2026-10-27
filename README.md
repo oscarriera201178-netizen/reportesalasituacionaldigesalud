@@ -230,7 +230,7 @@ El registro 35 no trae ubicación; se deja en blanco.
 Al abrir el modo de desarrollo se cargan automáticamente los 35 centros. El
 usuario asignado se muestra al seleccionar cada centro.
 El catálogo no contiene contraseñas y no crea cuentas de acceso de los centros.
-El administrador las configurará al finalizar. Los usuarios se conservan como
+En modo desarrollo, los usuarios se conservan como
 datos de asignación, no como un inicio de sesión activo.
 
 El catálogo permanece en el proyecto y vuelve a cargarse al reiniciar; los
@@ -239,7 +239,7 @@ base normal ni en Residencias.
 
 ### Acceso final con cuentas
 
-El acceso con cuentas se configurará al finalizar la aplicación. Para activarlo,
+Para activar el acceso con cuentas,
 inicia sin `SALUD_DEVELOPMENT_MODE=1` (está desactivado por defecto).
 
 Antes de exponer el servidor, crea la cuenta administradora en una terminal
@@ -259,8 +259,15 @@ sal aleatoria. No escribas credenciales en el chat ni en el repositorio.
 ```
 
 Abre el puerto 8503 en la vista previa del editor. Se usa un puerto diferente
-del portal de Residencias. La pantalla del administrador solo permite consultar
-el estado de los centros y descargar informes; no administra cuentas.
+del portal de Residencias. En modo con cuentas, la barra lateral del administrador
+permite elegir **Informes** o **Cuentas de centros**. Esta última sección permite
+crear un centro con su usuario y contraseña temporal, activar o desactivar su
+cuenta y restablecer su contraseña sin eliminar el inventario. Entrega las
+credenciales por un canal privado, nunca en GitHub. Todos usan el mismo enlace:
+el administrador consulta informes y cada centro accede solo a su inventario.
+Para entrar como centro, cierra la sesión administradora e inicia sesión con la
+cuenta del centro (o utiliza otro navegador). La gestión de cuentas no aparece
+en modo de desarrollo.
 
 Cada centro debe cambiar la contraseña temporal antes de acceder a su inventario.
 Las sesiones vencen tras 30 minutos sin actividad o un máximo de ocho horas.

@@ -59,6 +59,77 @@ class AppTests(unittest.TestCase):
             with self.assertRaisesRegex(InventoryError, "debe ser una tabla"):
                 app_module.bootstrap_from_secrets(self.store)
 
+    def test_admin_creates_and_manages_center_account_from_same_app(self):
+        self.store.bootstrap("admin", PASSWORD)
+        admin = self.store.login("admin", PASSWORD)
+        app = AppTest.from_file(APP, default_timeout=30)
+        app.session_state["token"] = admin
+        app.run()
+        app.radio(key="admin_page").set_value("Cuentas de centros").run()
+        self.assertFalse(app.exception)
+        app.text_input(key="account_center_name").set_value("Centro Nuevo")
+        app.text_input(key="account_center_location").set_value("Norte")
+        app.text_input(key="account_username").set_value("nuevo")
+        app.text_input(key="account_password").set_value(TEMPORARY)
+        app.text_input(key="account_confirmation").set_value("different")
+        app.button(key="FormSubmitter:new_center-Crear centro y cuenta").click().run()
+        self.assertTrue(any("no coinciden" in error.value for error in app.error))
+        self.assertFalse(self.store.users(admin))
+        for key, value in (
+            ("account_center_name", "Centro Nuevo"), ("account_center_location", "Norte"),
+            ("account_username", "nuevo"), ("account_password", TEMPORARY),
+            ("account_confirmation", TEMPORARY),
+        ):
+            app.text_input(key=key).set_value(value)
+        app.button(key="FormSubmitter:new_center-Crear centro y cuenta").click().run()
+        self.assertFalse(app.exception)
+        account = self.store.users(admin)[0]
+        center = self.store.centers(admin)[0]
+        token = self.store.login("nuevo", TEMPORARY)
+        self.assertTrue(self.store.identity(token)["must_change"])
+        center_app = AppTest.from_file(APP, default_timeout=30)
+        center_app.session_state["token"] = token
+        center_app.run()
+        self.assertTrue(any("temporal" in item.value for item in center_app.warning))
+        self.assertFalse(any(item.key == "admin_page" for item in center_app.radio))
+        self.store.change_password(token, TEMPORARY, PASSWORD)
+        token = self.store.login("nuevo", PASSWORD)
+        center_app.session_state["token"] = token
+        center_app.run()
+        self.assertFalse(center_app.exception)
+        self.assertEqual(self.store.centers(token), [center])
+        self.assertTrue(any(button.key == "inventory_category_Camas" for button in center_app.button))
+        app.checkbox[0].uncheck()
+        app.button(key=f"FormSubmitter:manage_user_{account['id']}-Guardar cuenta").click().run()
+        self.assertFalse(app.exception)
+        self.assertFalse(self.store.users(admin)[0]["active"])
+        app.checkbox[0].check()
+        form = next(form for form in app.get("form") if form.key == f"manage_user_{account['id']}")
+        form.text_input[0].set_value(TEMPORARY)
+        form.text_input[1].set_value(TEMPORARY)
+        app.button(key=f"FormSubmitter:manage_user_{account['id']}-Guardar cuenta").click().run()
+        self.assertFalse(app.exception)
+        token = self.store.login("nuevo", TEMPORARY)
+        self.assertTrue(self.store.identity(token)["must_change"])
+
+    def test_center_unknown_category_displays_explicit_error(self):
+        self.store.bootstrap("admin", PASSWORD)
+        admin = self.store.login("admin", PASSWORD)
+        self.store.create_center(admin, "Centro Norte", "Norte", "norte", TEMPORARY)
+        token = self.store.login("norte", TEMPORARY)
+        self.store.change_password(token, TEMPORARY, PASSWORD)
+        token = self.store.login("norte", PASSWORD)
+        app = AppTest.from_file(APP, default_timeout=30)
+        app.session_state["token"] = token
+        app.session_state["inventory_category"] = "Categoría desconocida"
+        app.run()
+        self.assertFalse(app.exception)
+        self.assertTrue(any("Categoría de inventario no válida" in error.value for error in app.error))
+        app.button(key="inventory_category_Camas").click().run()
+        self.assertFalse(app.exception)
+        self.assertFalse(app.error)
+        self.assertTrue(app.number_input)
+
     def load_remaining_sections(self, token, center_id):
         inventory = self.store.inventory(token, center_id)
         existing = {

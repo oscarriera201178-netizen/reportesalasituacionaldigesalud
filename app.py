@@ -1,3 +1,4 @@
+
 import logging
 import os
 import re
@@ -799,6 +800,8 @@ def center_view(store, token, center_id):
     editable = store.submission(token, center_id)["editable"]
     inventory_buttons()
     selected_category = st.session_state["inventory_category"]
+    if selected_category not in REPORT_CATEGORIES:
+        raise InventoryError("Categoría de inventario no válida. Selecciona uno de los ítems disponibles.")
     loaded = store.section_loads(token, center_id)[selected_category]
     if loaded and editable:
         st.success("SECCIÓN CARGADA. Bloqueada hasta el envío final; puedes usar EDITAR para corregirla.")
@@ -841,8 +844,6 @@ def center_view(store, token, center_id):
             st.caption("Cargar datos guarda las plantas eléctricas sin enviar el inventario semanal.")
             if confirm_load_button(f"load_plants_{center_id}"):
                 save(store.load_section, token, center_id, selected_category, values)
-    else:
-        facility_panel(store, token, center_id, inventory["facilities"], selected_category, editable=editable)
     st.divider()
     submission_panel(store, token, center_id)
     pdf_download(
@@ -926,6 +927,71 @@ def portal_heading(banner, title, name, *, single_line=False):
         st.title(name)
 
 
+def center_accounts(store, token):
+    users = store.users(token)
+    st.subheader("Cuentas de centros")
+    st.info(
+        "Todos ingresan por el mismo enlace con su propio usuario y contraseña. "
+        "Cada centro solo accede a su inventario."
+    )
+    with st.expander("Crear centro y cuenta"):
+        with st.form("new_center", clear_on_submit=True):
+            name = st.text_input("Nombre del centro", key="account_center_name")
+            location = st.text_input("Ubicación", key="account_center_location")
+            username = st.text_input("Usuario del centro", max_chars=40, key="account_username")
+            password = st.text_input(
+                "Contraseña temporal", type="password", max_chars=128, key="account_password",
+            )
+            confirmation = st.text_input(
+                "Confirmar contraseña temporal", type="password", max_chars=128,
+                key="account_confirmation",
+            )
+            st.caption(
+                "Usuario: 3 a 40 letras sin acentos, números, punto, guion o guion bajo. "
+                "Contraseña: 12 a 128 caracteres. El centro deberá cambiarla al ingresar."
+            )
+            if st.form_submit_button("Crear centro y cuenta"):
+                if password != confirmation:
+                    st.error("Las contraseñas no coinciden.")
+                else:
+                    try:
+                        store.create_center(token, name, location, username, password)
+                    except InventoryError as error:
+                        st.error(str(error))
+                    else:
+                        st.session_state["notice"] = "Centro y cuenta creados. Entrega las credenciales por un canal privado."
+                        st.rerun()
+    if not users:
+        st.info("No hay cuentas de centros registradas.")
+        return
+    by_id = {user["id"]: user for user in users}
+    selected = st.selectbox(
+        "Cuenta a administrar", list(by_id),
+        format_func=lambda value: f"{by_id[value]['center']} — {by_id[value]['username']}",
+        key="account_selected",
+    )
+    user = by_id[selected]
+    with st.form(f"manage_user_{selected}", clear_on_submit=True):
+        active = st.checkbox(
+            "Cuenta activa", value=bool(user["active"]),
+            key=f"account_active_{selected}_{user['active']}",
+        )
+        password = st.text_input("Nueva contraseña temporal", type="password", max_chars=128)
+        confirmation = st.text_input("Confirmar nueva contraseña temporal", type="password", max_chars=128)
+        st.caption("Deja ambas contraseñas vacías para conservar la actual. Desactivar no elimina el inventario.")
+        if st.form_submit_button("Guardar cuenta"):
+            if password != confirmation:
+                st.error("Las contraseñas no coinciden.")
+            else:
+                try:
+                    store.manage_user(token, selected, active, password)
+                except InventoryError as error:
+                    st.error(str(error))
+                else:
+                    st.session_state["notice"] = "Cuenta actualizada."
+                    st.rerun()
+
+
 def main():
     st.set_page_config(page_title="DIGESALUD-MPPD", page_icon="🏥", layout="centered")
     st.html("""
@@ -973,6 +1039,13 @@ def main():
     if actor["role"] == "admin":
         portal_heading(banner, title, "SALA SITUACIONAL DIGESALUD-MPPD", single_line=True)
         subtitle.empty()
+        if not development:
+            page = st.sidebar.radio(
+                "Administración", ["Informes", "Cuentas de centros"], key="admin_page",
+            )
+            if page == "Cuentas de centros":
+                center_accounts(store, token)
+                return
         centers = store.centers(token)
         summary = store.summary(token)
         period = datetime.fromtimestamp(weekly_status(0, time.time())["period_start"], REPORT_TIMEZONE)
