@@ -11,7 +11,7 @@ from streamlit.testing.v1 import AppTest
 import app as app_module
 from store import (
     BED_TYPES, INVENTORY_QUANTITIES, REPORT_SECTIONS, SPECIAL_EQUIPMENT_TYPES, InventoryError,
-    REPORT_LOADED, REPORT_PENDING, REPORT_TIMEZONE, Store,
+    REPORT_LOADED, REPORT_PENDING, REPORT_TIMEZONE, Store, load_center_catalog,
 )
 
 
@@ -86,31 +86,59 @@ class AppTests(unittest.TestCase):
         account = self.store.users(admin)[0]
         center = self.store.centers(admin)[0]
         token = self.store.login("nuevo", TEMPORARY)
-        self.assertTrue(self.store.identity(token)["must_change"])
+        self.assertFalse(self.store.identity(token)["must_change"])
         center_app = AppTest.from_file(APP, default_timeout=30)
         center_app.session_state["token"] = token
         center_app.run()
-        self.assertTrue(any("temporal" in item.value for item in center_app.warning))
-        self.assertFalse(any(item.key == "admin_page" for item in center_app.radio))
-        self.store.change_password(token, TEMPORARY, PASSWORD)
-        token = self.store.login("nuevo", PASSWORD)
-        center_app.session_state["token"] = token
-        center_app.run()
         self.assertFalse(center_app.exception)
+        self.assertFalse(any(item.key == "admin_page" for item in center_app.radio))
+        self.assertFalse(any(field.type == "password" for field in center_app.text_input))
         self.assertEqual(self.store.centers(token), [center])
         self.assertTrue(any(button.key == "inventory_category_Camas" for button in center_app.button))
-        app.checkbox[0].uncheck()
-        app.button(key=f"FormSubmitter:manage_user_{account['id']}-Guardar cuenta").click().run()
+        form = next(form for form in app.get("form") if form.key == f"manage_user_{account['id']}")
+        form.text_input[0].set_value("Centro Renombrado")
+        form.text_input[1].set_value("Sur")
+        app.button(key=f"FormSubmitter:manage_user_{account['id']}-Guardar datos").click().run()
+        self.assertFalse(app.exception)
+        renamed = self.store.centers(admin)[0]
+        self.assertEqual(renamed["name"], "Centro Renombrado")
+        self.assertEqual(renamed["location"], "Sur")
+        app.button(key=f"deactivate_user_{account['id']}").click().run()
         self.assertFalse(app.exception)
         self.assertFalse(self.store.users(admin)[0]["active"])
-        app.checkbox[0].check()
-        form = next(form for form in app.get("form") if form.key == f"manage_user_{account['id']}")
-        form.text_input[0].set_value(TEMPORARY)
-        form.text_input[1].set_value(TEMPORARY)
-        app.button(key=f"FormSubmitter:manage_user_{account['id']}-Guardar cuenta").click().run()
+        app.button(key=f"activate_user_{account['id']}").click().run()
         self.assertFalse(app.exception)
-        token = self.store.login("nuevo", TEMPORARY)
-        self.assertTrue(self.store.identity(token)["must_change"])
+        self.assertTrue(self.store.users(admin)[0]["active"])
+        app.text_input(key=f"account_password_{account['id']}").set_value(PASSWORD)
+        app.text_input(key=f"account_confirmation_{account['id']}").set_value(PASSWORD)
+        app.button(key=f"FormSubmitter:password_user_{account['id']}-Cambiar contraseña").click().run()
+        self.assertFalse(app.exception)
+        token = self.store.login("nuevo", PASSWORD)
+        self.assertFalse(self.store.identity(token)["must_change"])
+
+    def test_admin_creates_account_for_catalog_center_without_retyping_name(self):
+        self.store.bootstrap("admin", PASSWORD)
+        admin = self.store.login("admin", PASSWORD)
+        self.store.import_centers(admin, load_center_catalog()[:2])
+        app = AppTest.from_file(APP, default_timeout=30)
+        app.session_state["token"] = admin
+        app.run()
+        app.radio(key="admin_page").set_value("Cuentas de centros").run()
+        self.assertFalse(app.exception)
+        app.selectbox(key="account_center_id").set_value(2)
+        app.text_input(key="account_new_username").set_value("centro2")
+        app.text_input(key="account_new_password").set_value(TEMPORARY)
+        app.text_input(key="account_new_confirmation").set_value(TEMPORARY)
+        app.button(key="FormSubmitter:new_account-Crear cuenta").click().run()
+        self.assertFalse(app.exception)
+        account = self.store.users(admin)[0]
+        center = self.store.centers(admin)[1]
+        self.assertEqual(account["username"], "centro2")
+        self.assertEqual(account["center_id"], center["id"])
+        self.assertEqual(account["center"], center["name"])
+        self.assertEqual(account["location"], center["location"])
+        token = self.store.login("centro2", TEMPORARY)
+        self.assertFalse(self.store.identity(token)["must_change"])
 
     def test_center_unknown_category_displays_explicit_error(self):
         self.store.bootstrap("admin", PASSWORD)
@@ -1361,7 +1389,7 @@ class AppTests(unittest.TestCase):
         app.button[0].click().run()
         self.assertFalse(app.exception)
         self.assertFalse(any(
-            (form.key or "").startswith(("new_center", "edit_center_", "manage_user_"))
+            (form.key or "").startswith(("new_center", "edit_center_", "manage_user_", "password_user_"))
             for form in app.get("form")
         ))
         self.assertFalse(any(
@@ -1465,7 +1493,7 @@ class AppTests(unittest.TestCase):
         self.assertIn("overflow-x: auto", style)
         self.assertEqual(self.store.centers(token)[0]["name"], name)
 
-    def test_center_login_requires_password_change_and_hides_admin(self):
+    def test_center_login_goes_straight_to_inventory_and_hides_admin(self):
         self.store.bootstrap("admin", PASSWORD)
         token = self.store.login("admin", PASSWORD)
         self.store.create_center(token, "Centro Norte", "Norte", "norte", TEMPORARY)
@@ -1475,15 +1503,9 @@ class AppTests(unittest.TestCase):
         app.text_input[0].set_value("norte")
         app.text_input[1].set_value(TEMPORARY)
         app.button[0].click().run()
-        self.assertFalse(app.tabs)
-        form = next(form for form in app.get("form") if form.key == "change_password")
-        for widget, value in zip(form.text_input, (TEMPORARY, PASSWORD, PASSWORD)):
-            widget.set_value(value)
-        form.button[0].click().run()
-        app.text_input[0].set_value("norte")
-        app.text_input[1].set_value(PASSWORD)
-        app.button[0].click().run()
         self.assertFalse(app.exception)
+        self.assertFalse(app.tabs)
+        self.assertFalse(any(form.key == "change_password" for form in app.get("form")))
         self.assertFalse(any(box.label == "Centro de salud" for box in app.selectbox))
         self.assertEqual(app.title[0].value, "CENTRO NORTE")
         self.assertFalse(any(form.key == "new_center" for form in app.get("form")))

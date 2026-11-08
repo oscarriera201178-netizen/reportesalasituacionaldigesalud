@@ -643,13 +643,11 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(results.count("accepted"), 1)
         self.assertEqual(sum(REPORT_LOADED in result for result in results), 1)
 
-    def test_new_account_must_change_password_before_any_data_access(self):
+    def test_new_account_accesses_data_without_changing_password(self):
         token = self.store.login("sur", TEMPORARY)
-        self.assertTrue(self.store.identity(token)["must_change"])
-        with self.assertRaises(AccessError):
-            self.store.centers(token)
-        with self.assertRaises(AccessError):
-            self.store.inventory(token, self.south)
+        self.assertFalse(self.store.identity(token)["must_change"])
+        self.assertEqual(self.store.centers(token)[0]["id"], self.south)
+        self.store.inventory(token, self.south)
         self.store.change_password(token, TEMPORARY, CHANGED)
         with self.assertRaises(AccessError):
             self.store.identity(token)
@@ -660,7 +658,7 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(AccessError):
             self.store.inventory(self.center, self.north)
         token = self.store.login("norte", TEMPORARY)
-        self.assertTrue(self.store.identity(token)["must_change"])
+        self.assertFalse(self.store.identity(token)["must_change"])
         self.store.manage_user(self.admin, north_user["id"], False)
         with self.assertRaises(AccessError):
             self.store.identity(token)
@@ -756,6 +754,28 @@ class StoreTests(unittest.TestCase):
         self.store.update_center(self.admin, center["id"], "Nuevo", "", center["assigned_username"])
         self.assertEqual(self.store.centers(self.admin)[-2]["name"], "Nuevo")
         self.assertEqual(len(self.store.users(self.admin)), 2)
+
+    def test_catalog_center_account_creation_validates_access_and_conflicts(self):
+        self.store.import_centers(self.admin, load_center_catalog()[:2])
+        center = self.store.centers(self.admin)[-2]
+        with self.assertRaises(AccessError):
+            self.store.create_account(self.center, center["id"], "nuevo", TEMPORARY)
+        for center_id, username, password in (
+            (999, "nuevo", TEMPORARY),
+            (center["id"], "norte", TEMPORARY),
+            (center["id"], "no valido", TEMPORARY),
+            (center["id"], "nuevo", "short"),
+        ):
+            with self.subTest(center_id=center_id, username=username, password=password):
+                with self.assertRaises(InventoryError):
+                    self.store.create_account(self.admin, center_id, username, password)
+        self.assertEqual(len(self.store.users(self.admin)), 2)
+        self.store.create_account(self.admin, center["id"], "  NUEVO ", TEMPORARY)
+        with self.assertRaises(InventoryError):
+            self.store.create_account(self.admin, center["id"], "otro", TEMPORARY)
+        token = self.store.login("nuevo", TEMPORARY)
+        self.assertFalse(self.store.identity(token)["must_change"])
+        self.assertEqual(self.store.identity(token)["center_id"], center["id"])
 
     def test_unknown_session_never_reads_data(self):
         with self.assertRaises(AccessError):

@@ -318,6 +318,9 @@ class Store:
             connection.execute(
                 "DELETE FROM quantities WHERE category='Vehículos' AND kind='Carga pesada / autobús'",
             )
+            # El administrador asigna y cambia las claves de los centros: ninguna
+            # cuenta de centro debe quedar obligada a cambiar su contraseña.
+            connection.execute("UPDATE users SET must_change=0 WHERE role='center'")
         self.path.chmod(0o600)
 
     @contextmanager
@@ -350,8 +353,8 @@ class Store:
         try:
             connection.execute(
                 "INSERT INTO users(username,salt,password_hash,role,center_id,must_change) "
-                "VALUES(?,?,?,?,?,?)",
-                (username, salt, _hash(password, salt), role, center_id, int(role != "admin")),
+                "VALUES(?,?,?,?,?,0)",
+                (username, salt, _hash(password, salt), role, center_id),
             )
         except sqlite3.IntegrityError as error:
             raise InventoryError("El usuario o la cuenta del centro ya existe.") from error
@@ -468,6 +471,14 @@ class Store:
                 raise InventoryError("Ya existe un centro con ese nombre o usuario asignado.") from error
             self._create_user(connection, username, password, "center", cursor.lastrowid)
 
+    def create_account(self, token: str, center_id: int, username: str, password: str) -> None:
+        username = _username(username)
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            if not connection.execute("SELECT 1 FROM centers WHERE id=?", (center_id,)).fetchone():
+                raise InventoryError("El centro seleccionado no existe.")
+            self._create_user(connection, username, password, "center", center_id)
+
     def update_center(self, token: str, center_id: int, name: str, location: str, username: str) -> None:
         name = _text(name, "Nombre del centro")
         location = _text(location, "Ubicación", required=False)
@@ -494,7 +505,7 @@ class Store:
             except sqlite3.IntegrityError as error:
                 raise InventoryError("Ya existe un centro con ese nombre o usuario asignado.") from error
 
-    def import_centers(self, token: str, catalog: list[dict]) -> int:
+    def _import_centers(self, connection, catalog: list[dict]) -> int:
         prepared = []
         names = set()
         usernames = set()
@@ -518,29 +529,32 @@ class Store:
         if len(set(numbers)) != len(numbers):
             raise InventoryError("El catálogo contiene números repetidos.")
         added = 0
+        for name, location, username in prepared:
+            existing = connection.execute("SELECT * FROM centers WHERE name=?", (name,)).fetchone()
+            if existing:
+                if existing["location"] != location or existing["assigned_username"] != username:
+                    raise InventoryError("El centro existente tiene una ubicación o usuario distinto del catálogo.")
+                continue
+            try:
+                connection.execute(
+                    "INSERT INTO centers(name,location,assigned_username) VALUES(?,?,?)",
+                    (name, location, username),
+                )
+            except sqlite3.IntegrityError as error:
+                raise InventoryError("El usuario del catálogo ya está asignado a otro centro.") from error
+            added += 1
+        return added
+
+    def import_centers(self, token: str, catalog: list[dict]) -> int:
         with self.transaction() as connection:
             self._actor(connection, token, admin=True)
-            for name, location, username in prepared:
-                existing = connection.execute("SELECT * FROM centers WHERE name=?", (name,)).fetchone()
-                if existing:
-                    if existing["location"] != location or existing["assigned_username"] != username:
-                        raise InventoryError("El centro existente tiene una ubicación o usuario distinto del catálogo.")
-                    continue
-                try:
-                    connection.execute(
-                        "INSERT INTO centers(name,location,assigned_username) VALUES(?,?,?)",
-                        (name, location, username),
-                    )
-                except sqlite3.IntegrityError as error:
-                    raise InventoryError("El usuario del catálogo ya está asignado a otro centro.") from error
-                added += 1
-        return added
+            return self._import_centers(connection, catalog)
 
     def users(self, token: str) -> list[dict]:
         with self.transaction() as connection:
             self._actor(connection, token, admin=True)
             return [dict(row) for row in connection.execute(
-                "SELECT u.id,u.username,u.active,u.center_id,c.name AS center FROM users u "
+                "SELECT u.id,u.username,u.active,u.center_id,c.name AS center,c.location FROM users u "
                 "JOIN centers c ON c.id=u.center_id ORDER BY c.id",
             )]
 
@@ -605,7 +619,7 @@ class Store:
             ).fetchone():
                 raise InventoryError("Selecciona una cuenta de centro válida.")
             if password:
-                self._set_password(connection, user_id, password, must_change=True)
+                self._set_password(connection, user_id, password, must_change=False)
             connection.execute("UPDATE users SET active=? WHERE id=?", (int(active), user_id))
             if not active:
                 connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
@@ -1125,8 +1139,10 @@ class Store:
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Crear la cuenta administradora en una terminal privada.")
-    parser.add_argument("command", choices=("bootstrap",))
+    parser = argparse.ArgumentParser(
+        description="Crear la cuenta administradora o importar el catálogo en una terminal privada.",
+    )
+    parser.add_argument("command", choices=("bootstrap", "import-catalog"))
     args = parser.parse_args()
     if args.command == "bootstrap":
         username = input("Usuario administrador: ")
@@ -1138,6 +1154,14 @@ def main():
         except (InventoryError, sqlite3.Error, OSError) as error:
             parser.exit(1, f"No se pudo crear la cuenta: {error}\n")
         print("Cuenta administradora creada. Ya puedes iniciar sesión.")
+    if args.command == "import-catalog":
+        try:
+            store = Store()
+            with store.transaction() as connection:
+                added = store._import_centers(connection, load_center_catalog())
+        except (InventoryError, sqlite3.Error, OSError) as error:
+            parser.exit(1, f"No se pudo importar el catálogo: {error}\n")
+        print(f"Catálogo importado: {added} centros nuevos. Los centros existentes se conservaron.")
 
 
 if __name__ == "__main__":

@@ -144,23 +144,24 @@ def login(store):
             if actor["must_change"]:
                 st.warning("Cambia la contraseña temporal para acceder al inventario.")
                 password_form(store, token, mandatory=True)
-            with st.sidebar.expander("Cambiar contraseña"):
-                password_form(store, token)
+            if actor["role"] == "admin":
+                with st.sidebar.expander("Cambiar contraseña"):
+                    password_form(store, token)
             return token, actor
-    st.subheader("Iniciar sesión")
-    st.caption("Acceso privado. Utiliza la cuenta asignada a tu centro.")
-    with st.form("login", clear_on_submit=True):
-        username = st.text_input("Usuario", max_chars=40)
-        password = st.text_input("Contraseña", type="password", max_chars=128)
-        if st.form_submit_button("Ingresar", type="primary"):
-            try:
-                token = store.login(username, password)
-            except AccessError as error:
-                st.error(str(error))
-            else:
-                st.session_state.clear()
-                st.session_state["token"] = token
-                st.rerun()
+    _left, center, _right = st.columns([1, 1, 1])
+    with center:
+        with st.form("login", clear_on_submit=True):
+            username = st.text_input("Usuario", max_chars=40)
+            password = st.text_input("Contraseña", type="password", max_chars=128)
+            if st.form_submit_button("Ingresar", type="primary"):
+                try:
+                    token = store.login(username, password)
+                except AccessError as error:
+                    st.error(str(error))
+                else:
+                    st.session_state.clear()
+                    st.session_state["token"] = token
+                    st.rerun()
     st.stop()
 
 
@@ -932,23 +933,62 @@ def center_accounts(store, token):
     st.subheader("Cuentas de centros")
     st.info(
         "Todos ingresan por el mismo enlace con su propio usuario y contraseña. "
-        "Cada centro solo accede a su inventario."
+        "Cada centro solo accede a su inventario. "
+        "Tú asignas el usuario y la clave de cada cuenta y eres quien puede cambiarlos."
     )
-    with st.expander("Crear centro y cuenta"):
+    accounted = {user["center_id"] for user in users}
+    available = [center for center in store.centers(token) if center["id"] not in accounted]
+    if available:
+        with st.expander("Crear cuenta para un centro registrado"):
+            with st.form("new_account", clear_on_submit=True):
+                by_id = {center["id"]: center for center in available}
+                center_id = st.selectbox(
+                    "Centro", list(by_id),
+                    format_func=lambda value: f"{value}. {by_id[value]['name']}"
+                    + (f" — {by_id[value]['location']}" if by_id[value]["location"] else ""),
+                    key="account_center_id",
+                )
+                if by_id[center_id]["assigned_username"]:
+                    st.caption(f"Usuario asignado en el catálogo: {by_id[center_id]['assigned_username']}")
+                username = st.text_input("Usuario del centro", max_chars=40, key="account_new_username")
+                password = st.text_input(
+                    "Contraseña", type="password", max_chars=128, key="account_new_password",
+                )
+                confirmation = st.text_input(
+                    "Confirmar contraseña", type="password", max_chars=128,
+                    key="account_new_confirmation",
+                )
+                st.caption(
+                    "El nombre y la ubicación ya están registrados; solo asignas el acceso. "
+                    "Usuario: 3 a 40 letras sin acentos, números, punto, guion o guion bajo. "
+                    "Contraseña: 12 a 128 caracteres. Tú la defines y solo tú puedes cambiarla."
+                )
+                if st.form_submit_button("Crear cuenta"):
+                    if password != confirmation:
+                        st.error("Las contraseñas no coinciden.")
+                    else:
+                        try:
+                            store.create_account(token, center_id, username, password)
+                        except InventoryError as error:
+                            st.error(str(error))
+                        else:
+                            st.session_state["notice"] = "Cuenta creada. Entrega las credenciales por un canal privado."
+                            st.rerun()
+    with st.expander("Crear centro nuevo y cuenta"):
         with st.form("new_center", clear_on_submit=True):
             name = st.text_input("Nombre del centro", key="account_center_name")
             location = st.text_input("Ubicación", key="account_center_location")
             username = st.text_input("Usuario del centro", max_chars=40, key="account_username")
             password = st.text_input(
-                "Contraseña temporal", type="password", max_chars=128, key="account_password",
+                "Contraseña", type="password", max_chars=128, key="account_password",
             )
             confirmation = st.text_input(
-                "Confirmar contraseña temporal", type="password", max_chars=128,
+                "Confirmar contraseña", type="password", max_chars=128,
                 key="account_confirmation",
             )
             st.caption(
                 "Usuario: 3 a 40 letras sin acentos, números, punto, guion o guion bajo. "
-                "Contraseña: 12 a 128 caracteres. El centro deberá cambiarla al ingresar."
+                "Contraseña: 12 a 128 caracteres. Tú la defines y solo tú puedes cambiarla."
             )
             if st.form_submit_button("Crear centro y cuenta"):
                 if password != confirmation:
@@ -964,36 +1004,76 @@ def center_accounts(store, token):
     if not users:
         st.info("No hay cuentas de centros registradas.")
         return
-    by_id = {user["id"]: user for user in users}
-    selected = st.selectbox(
-        "Cuenta a administrar", list(by_id),
-        format_func=lambda value: f"{by_id[value]['center']} — {by_id[value]['username']}",
-        key="account_selected",
+    st.divider()
+    st.caption(
+        f"{len(users)} cuentas registradas. Desde cada panel puedes cambiar la clave, "
+        "activar o desactivar la cuenta y editar sus datos."
     )
-    user = by_id[selected]
-    with st.form(f"manage_user_{selected}", clear_on_submit=True):
-        active = st.checkbox(
-            "Cuenta activa", value=bool(user["active"]),
-            key=f"account_active_{selected}_{user['active']}",
-        )
-        password = st.text_input("Nueva contraseña temporal", type="password", max_chars=128)
-        confirmation = st.text_input("Confirmar nueva contraseña temporal", type="password", max_chars=128)
-        st.caption("Deja ambas contraseñas vacías para conservar la actual. Desactivar no elimina el inventario.")
-        if st.form_submit_button("Guardar cuenta"):
-            if password != confirmation:
-                st.error("Las contraseñas no coinciden.")
-            else:
-                try:
-                    store.manage_user(token, selected, active, password)
-                except InventoryError as error:
-                    st.error(str(error))
-                else:
-                    st.session_state["notice"] = "Cuenta actualizada."
+    for user in users:
+        user_id = user["id"]
+        status = "🟢 Activa" if user["active"] else "🔴 Desactivada"
+        with st.container(border=True):
+            st.markdown(f"**{user['center']}** — `{user['username']}` · {status}")
+            with st.form(f"password_user_{user_id}", clear_on_submit=True):
+                password = st.text_input(
+                    "Nueva contraseña", type="password", max_chars=128,
+                    key=f"account_password_{user_id}",
+                )
+                confirmation = st.text_input(
+                    "Confirmar nueva contraseña", type="password", max_chars=128,
+                    key=f"account_confirmation_{user_id}",
+                )
+                st.caption(
+                    "Entre 12 y 128 caracteres. Al cambiarla se cierran las sesiones del centro."
+                )
+                if st.form_submit_button("Cambiar contraseña"):
+                    if password != confirmation:
+                        st.error("Las contraseñas no coinciden.")
+                    elif not 12 <= len(password) <= 128:
+                        st.error("La contraseña debe tener entre 12 y 128 caracteres.")
+                    else:
+                        try:
+                            store.manage_user(token, user_id, user["active"], password)
+                        except InventoryError as error:
+                            st.error(str(error))
+                        else:
+                            st.session_state["notice"] = "Contraseña actualizada."
+                            st.rerun()
+            if user["active"]:
+                if st.button("Desactivar cuenta", key=f"deactivate_user_{user_id}"):
+                    store.manage_user(token, user_id, False)
+                    st.session_state["notice"] = "Cuenta desactivada. El inventario se conserva."
                     st.rerun()
+            else:
+                if st.button("Activar cuenta", key=f"activate_user_{user_id}", type="primary"):
+                    store.manage_user(token, user_id, True)
+                    st.session_state["notice"] = "Cuenta activada."
+                    st.rerun()
+            with st.expander("Editar nombre, ubicación y usuario"):
+                with st.form(f"manage_user_{user_id}"):
+                    name = st.text_input(
+                        "Nombre del centro", value=user["center"], key=f"account_name_{user_id}",
+                    )
+                    location = st.text_input(
+                        "Ubicación", value=user["location"] or "", key=f"account_location_{user_id}",
+                    )
+                    username = st.text_input(
+                        "Usuario del centro", value=user["username"], max_chars=40,
+                        key=f"account_user_{user_id}",
+                    )
+                    st.caption("Cambiar el usuario cierra las sesiones del centro.")
+                    if st.form_submit_button("Guardar datos"):
+                        try:
+                            store.update_center(token, user["center_id"], name, location, username)
+                        except InventoryError as error:
+                            st.error(str(error))
+                        else:
+                            st.session_state["notice"] = "Datos de la cuenta actualizados."
+                            st.rerun()
 
 
 def main():
-    st.set_page_config(page_title="DIGESALUD-MPPD", page_icon="🏥", layout="centered")
+    st.set_page_config(page_title="DIGESALUD-MPPD", page_icon="🏥", layout="wide")
     st.html("""
         <style>
         [class*="st-key-report_confirmation_"] [data-testid="stAlert"] [data-testid="stMarkdownContainer"] {
@@ -1022,10 +1102,24 @@ def main():
         </style>
     """)
     banner = st.empty()
+    shield = st.empty()
+    with shield.container(key="login_shield"):
+        _left, middle, _right = st.columns([1, 1, 1])
+        with middle:
+            _pad_left, emblem, _pad_right = st.columns([1, 2, 1])
+            emblem.image(str(Path(__file__).with_name("escudo.png")), width="stretch")
     title = st.empty()
-    title.title("DIGESALUD-MPPD")
+    with title.container(key="login_heading"):
+        st.html("""
+            <style>
+            .st-key-login_heading h1 {
+                text-align: center;
+                font-size: clamp(0.9rem, 3vw, 1.65rem);
+            }
+            </style>
+        """)
+        st.title("SALA SITUACIONAL DIGESALUD-MPPD")
     subtitle = st.empty()
-    subtitle.caption("Camas · Vehículos · Bancos de sangre · Laboratorios · Quirófanos · Equipos especiales")
     development = os.environ.get("SALUD_DEVELOPMENT_MODE") == "1"
     if development:
         path, password, _directory, development_centers = development_store(load_center_catalog())
@@ -1035,6 +1129,7 @@ def main():
         store = Store()
         bootstrap_from_secrets(store)
         token, actor = login(store)
+    shield.empty()
     centers = store.centers(token)
     if actor["role"] == "admin":
         portal_heading(banner, title, "SALA SITUACIONAL DIGESALUD-MPPD", single_line=True)

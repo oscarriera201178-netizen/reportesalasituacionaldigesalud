@@ -1,6 +1,10 @@
 # DIGESALUD-MPPD — Inventario de Centros de Salud
 
-El portal muestra el título **DIGESALUD-MPPD** en el inicio de sesión. La
+El portal muestra el título **SALA SITUACIONAL DIGESALUD-MPPD** en el inicio de
+sesión, en mayúsculas, centrado y con fuente reducida; encima va el escudo de la
+Dirección General de Salud de la F.A.N.B. ([escudo.png](./escudo.png)), centrado
+y reducido a la mitad del ancho del formulario de usuario y contraseña, que
+ocupa un tercio del ancho, centrado bajo el título. La
 cuenta administradora muestra el cintillo institucional y debajo el título
 **SALA SITUACIONAL DIGESALUD-MPPD**, con el mismo cuadro verde, texto blanco,
 centrado y en negrita que los centros. Este título permanece en una sola línea
@@ -234,8 +238,16 @@ En modo desarrollo, los usuarios se conservan como
 datos de asignación, no como un inicio de sesión activo.
 
 El catálogo permanece en el proyecto y vuelve a cargarse al reiniciar; los
-inventarios de prueba siguen siendo temporales. No se ha importado nada en la
-base normal ni en Residencias.
+inventarios de prueba siguen siendo temporales. Para la base normal, importa
+el catálogo una sola vez desde una terminal privada:
+
+```sh
+.venv/bin/python store.py import-catalog
+```
+
+El comando registra los 35 centros con sus nombres y ubicaciones, sin crear
+cuentas de acceso. Es idempotente: conserva los centros ya registrados y no
+sobrescribe sus datos. No se ha importado nada en Residencias.
 
 ### Acceso final con cuentas
 
@@ -261,15 +273,23 @@ sal aleatoria. No escribas credenciales en el chat ni en el repositorio.
 Abre el puerto 8503 en la vista previa del editor. Se usa un puerto diferente
 del portal de Residencias. En modo con cuentas, la barra lateral del administrador
 permite elegir **Informes** o **Cuentas de centros**. Esta última sección permite
-crear un centro con su usuario y contraseña temporal, activar o desactivar su
-cuenta y restablecer su contraseña sin eliminar el inventario. Entrega las
+crear un centro nuevo con su usuario y contraseña, o crear solo la
+cuenta de un centro ya registrado en el catálogo seleccionándolo de la lista,
+sin volver a escribir su nombre ni su ubicación. El administrador asigna el
+usuario y la clave de cada cuenta y es quien puede cambiarlos; los centros no
+cambian su propia contraseña. Debajo se muestra la lista
+completa de cuentas registradas, cada una con su estado y un panel visible para
+cambiar su contraseña, activar o desactivar su cuenta y
+editar el nombre del centro, su ubicación y su usuario, sin eliminar el
+inventario. Entrega las
 credenciales por un canal privado, nunca en GitHub. Todos usan el mismo enlace:
 el administrador consulta informes y cada centro accede solo a su inventario.
 Para entrar como centro, cierra la sesión administradora e inicia sesión con la
 cuenta del centro (o utiliza otro navegador). La gestión de cuentas no aparece
 en modo de desarrollo.
 
-Cada centro debe cambiar la contraseña temporal antes de acceder a su inventario.
+Cada centro accede a su inventario con la clave asignada por el administrador;
+solo el administrador puede cambiarla desde **Cuentas de centros**.
 Las sesiones vencen tras 30 minutos sin actividad o un máximo de ocho horas.
 Tras cinco intentos fallidos se bloquea la cuenta durante 15 minutos.
 Cerrar sesión, cambiar/restablecer la contraseña o desactivar una cuenta revoca
