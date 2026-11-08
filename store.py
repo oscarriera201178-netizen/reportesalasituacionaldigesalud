@@ -365,6 +365,12 @@ class Store:
                 raise InventoryError("La cuenta administradora ya existe.")
             self._create_user(connection, username, password, "admin", None)
 
+    def bootstrap_catalog(self, catalog: list[dict]) -> None:
+        with self.transaction() as connection:
+            if connection.execute("SELECT 1 FROM centers").fetchone():
+                return
+            self._import_centers(connection, catalog)
+
     def login(self, username: str, password: str) -> str:
         if len(password) > 128:
             raise AccessError("Usuario o contraseña incorrectos, o cuenta bloqueada.")

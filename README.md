@@ -237,8 +237,11 @@ En modo desarrollo, los usuarios se conservan como
 datos de asignación, no como un inicio de sesión activo.
 
 El catálogo permanece en el proyecto y vuelve a cargarse al reiniciar; los
-inventarios de prueba siguen siendo temporales. Para la base normal, importa
-el catálogo una sola vez desde una terminal privada:
+inventarios de prueba siguen siendo temporales. Al desplegar con los secretos
+`bootstrap_admin` configurados (por ejemplo, en Streamlit Community Cloud), el
+catálogo se importa automáticamente en el primer arranque, solo si aún no hay
+centros registrados; no crea cuentas de acceso. Para la base normal sin
+secretos, importa el catálogo una sola vez desde una terminal privada:
 
 ```sh
 .venv/bin/python store.py import-catalog
@@ -328,7 +331,10 @@ No cargues información real.
    No guardes estos valores en el repositorio ni los compartas. La aplicación
    crea la cuenta inicial desde esos secretos solo cuando la base aún no tiene
    una cuenta administradora.
-4. Despliega la aplicación e inicia sesión con esas credenciales.
+4. Despliega la aplicación e inicia sesión con esas credenciales. El catálogo
+   de centros se importa automáticamente en el primer arranque; en la barra
+   lateral, entra a **Cuentas de centros** y asigna usuario y contraseña a
+   cada centro seleccionándolo de la lista, sin volver a escribir su nombre.
 
 Si Community Cloud reinicia o reconstruye la aplicación, la cuenta se puede
 volver a crear desde los secretos, pero los centros y los inventarios guardados

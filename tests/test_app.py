@@ -59,6 +59,19 @@ class AppTests(unittest.TestCase):
             with self.assertRaisesRegex(InventoryError, "debe ser una tabla"):
                 app_module.bootstrap_from_secrets(self.store)
 
+    def test_streamlit_secrets_import_center_catalog_once(self):
+        credentials = {"bootstrap_admin": {"username": "admin", "password": PASSWORD}}
+        with patch.object(app_module.st, "secrets", credentials):
+            app_module.bootstrap_from_secrets(self.store)
+            token = self.store.login("admin", PASSWORD)
+            catalog = load_center_catalog()
+            centers = self.store.centers(token)
+            self.assertEqual(len(centers), len(catalog))
+            self.assertEqual(centers[0]["assigned_username"], "centro13@centro.mil.ve")
+            self.assertFalse(self.store.users(token))
+            app_module.bootstrap_from_secrets(self.store)
+            self.assertEqual(len(self.store.centers(token)), len(catalog))
+
     def test_admin_creates_and_manages_center_account_from_same_app(self):
         self.store.bootstrap("admin", PASSWORD)
         admin = self.store.login("admin", PASSWORD)

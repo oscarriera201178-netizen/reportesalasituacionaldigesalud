@@ -166,19 +166,19 @@ def login(store):
 
 
 def bootstrap_from_secrets(store):
-    if store.initialized():
-        return
     try:
         credentials = st.secrets["bootstrap_admin"]
     except (KeyError, StreamlitSecretNotFoundError):
         return
-    if not isinstance(credentials, Mapping):
-        raise InventoryError("bootstrap_admin debe ser una tabla de secretos.")
-    username = credentials.get("username")
-    password = credentials.get("password")
-    if not isinstance(username, str) or not isinstance(password, str):
-        raise InventoryError("Configura usuario y contraseña en los secretos bootstrap_admin.")
-    store.bootstrap(username, password)
+    if not store.initialized():
+        if not isinstance(credentials, Mapping):
+            raise InventoryError("bootstrap_admin debe ser una tabla de secretos.")
+        username = credentials.get("username")
+        password = credentials.get("password")
+        if not isinstance(username, str) or not isinstance(password, str):
+            raise InventoryError("Configura usuario y contraseña en los secretos bootstrap_admin.")
+        store.bootstrap(username, password)
+    store.bootstrap_catalog(load_center_catalog())
 
 
 def choose_record(rows, key, label):

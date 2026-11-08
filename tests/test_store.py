@@ -819,6 +819,19 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(AccessError):
             store.login(north["assigned_username"], PASSWORD)
 
+    def test_bootstrap_catalog_loads_centers_once_without_accounts(self):
+        store = Store(self.store.path.with_name("bootstrap_catalog.sqlite3"))
+        store.bootstrap("admin", PASSWORD)
+        token = store.login("admin", PASSWORD)
+        catalog = load_center_catalog()
+        store.bootstrap_catalog(catalog)
+        self.assertEqual(len(store.centers(token)), len(catalog))
+        self.assertEqual(store.users(token), [])
+        store.bootstrap_catalog(catalog)
+        store.create_center(token, "Centro Nuevo", "Norte", "nuevo", PASSWORD)
+        store.bootstrap_catalog(catalog)
+        self.assertEqual(len(store.centers(token)), len(catalog) + 1)
+
     def test_catalog_requires_admin_and_can_exceed_old_limit(self):
         with self.assertRaises(AccessError):
             self.store.import_centers(self.center, load_center_catalog()[:1])
