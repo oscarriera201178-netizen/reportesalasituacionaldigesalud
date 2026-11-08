@@ -212,11 +212,11 @@ class ReportTests(unittest.TestCase):
                         ]
                         self.assertTrue(all(word[1] >= 109.99 for word in content))
 
-    def test_titles_identify_each_of_35_centers_in_every_pdf(self):
+    def test_titles_identify_each_of_34_centers_in_every_pdf(self):
         self.store.import_centers(self.token, load_center_catalog())
         centers = self.store.centers(self.token)
         centers = [center for center in centers if center["id"] not in (self.north, self.south)]
-        self.assertEqual(len(centers), 35)
+        self.assertEqual(len(centers), 34)
         for center in centers:
             suffix = f"DEL {center['name'].split(' - ', 1)[0].upper()}"
             for category in (None, *SUMMARY_CATEGORIES, "Todos los vehículos"):

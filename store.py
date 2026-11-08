@@ -53,9 +53,8 @@ SESSION_SECONDS = 8 * 60 * 60
 REPORT_COLUMNS = "id, name, location, assigned_username"
 REPORT_TIMEZONE = ZoneInfo("America/Caracas")
 REPORT_LOADED = (
-    "SU REPORTE SEMANAL FUE ENVIADO A LA SALA SITUACIONAL DIGESALUD-MPPD. "
-    "ESTE REPORTE SERA ENVIADO AL DIRECTOR DEL CENTRO DE SALUD POR EL DIRECTOR "
-    "GENERAL DE DIGESALUD-MPPPD PARA SU CONFIRMACION"
+    "SU REPORTE SEMANAL FUE ENVIADO A LA SALA SITUACIONAL DIGESALUD-MPPD, "
+    "validar el mismo con el Director del Centro de Salud"
 )
 REPORT_PENDING = "Pendiente por reportar"
 REPORT_SCHEDULE = "Las cargas se habilitan los jueves a las 00:00 y cierran los viernes a las 23:59 (hora de Venezuela)."

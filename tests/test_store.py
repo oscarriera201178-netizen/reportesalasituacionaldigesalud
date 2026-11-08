@@ -803,15 +803,15 @@ class StoreTests(unittest.TestCase):
         store.bootstrap("admin", PASSWORD)
         token = store.login("admin", PASSWORD)
         catalog = load_center_catalog()
-        self.assertEqual(len(catalog), 35)
-        self.assertEqual([row["number"] for row in catalog], list(range(1, 36)))
-        self.assertEqual(store.import_centers(token, catalog), 35)
+        self.assertEqual(len(catalog), 34)
+        self.assertEqual([row["number"] for row in catalog], list(range(1, 35)))
+        self.assertEqual(store.import_centers(token, catalog), 34)
         centers = store.centers(token)
-        self.assertEqual(len(centers), 35)
-        self.assertEqual(len({center["assigned_username"] for center in centers}), 35)
+        self.assertEqual(len(centers), 34)
+        self.assertEqual(len({center["assigned_username"] for center in centers}), 34)
         north = next(center for center in centers if center["assigned_username"] == "centro13@centro.mil.ve")
         self.assertEqual(north["location"], "PUERTO AYACUCHO, EDO. AMAZONAS")
-        self.assertEqual(next(center for center in centers if center["name"] == "MISION MILAGRA DIGESALUD")["location"], "")
+        self.assertFalse(any(center["name"] == "MISION MILAGRA DIGESALUD" for center in centers))
         store.save_quantity(token, north["id"], "Camas", "UCI", 2, 0)
         self.assertEqual(store.import_centers(token, catalog), 0)
         self.assertEqual(store.inventory(token, north["id"])["quantities"][0]["operational"], 2)
@@ -822,10 +822,10 @@ class StoreTests(unittest.TestCase):
     def test_catalog_requires_admin_and_can_exceed_old_limit(self):
         with self.assertRaises(AccessError):
             self.store.import_centers(self.center, load_center_catalog()[:1])
-        self.assertEqual(self.store.import_centers(self.admin, load_center_catalog()), 35)
+        self.assertEqual(self.store.import_centers(self.admin, load_center_catalog()), 34)
         extra = {"number": 36, "center": "Centro adicional", "username": "extra@example.org"}
         self.assertEqual(self.store.import_centers(self.admin, [extra]), 1)
-        self.assertEqual(len(self.store.centers(self.admin)), 38)
+        self.assertEqual(len(self.store.centers(self.admin)), 37)
 
     def test_catalog_rejects_password_fields_duplicates_and_conflicts(self):
         catalog = load_center_catalog()

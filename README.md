@@ -15,12 +15,12 @@ dentro de un cuadro del mismo color verde del botón de categoría seleccionado
 centro en los listados ni en los reportes PDF. El nombre entre comillas permanece
 en una sola línea; en pantallas estrechas el encabezado permite desplazamiento
 horizontal para no dividirlo ni ocultarlo.
-Los 35 portales de centros muestran el cintillo institucional encima del cuadro
+Los 34 portales de centros muestran el cintillo institucional encima del cuadro
 verde del nombre, ajustado al ancho disponible y sin deformarlo.
 Debajo del título del administrador se muestra la semana del período de reporte
 (lunes a viernes, hora de Venezuela) y **Centros de Salud que Han Reportado:
 enviados/total Faltan: pendientes**. Se cuentan únicamente envíos del período actual y el total
-se obtiene de los centros registrados, inicialmente 35.
+se obtiene de los centros registrados, inicialmente 34.
 
 Aplicación Streamlit independiente de Residencias, adaptable a móvil y computadora.
 No consulta ni modifica las bases de datos de Residencias.
@@ -169,9 +169,8 @@ mostrar el texto completo.
   horaria de referencia para los períodos semanales sigue siendo
   **America/Caracas (Venezuela)**, independientemente de la hora del servidor.
 - Después del envío se muestra centrado **SU REPORTE SEMANAL FUE ENVIADO A LA SALA
-  SITUACIONAL DIGESALUD-MPPD. ESTE REPORTE SERA ENVIADO AL DIRECTOR DEL CENTRO
-  DE SALUD POR EL DIRECTOR GENERAL DE DIGESALUD-MPPPD PARA SU CONFIRMACION**
-  y se bloquean
+  SITUACIONAL DIGESALUD-MPPD, validar el mismo con el Director del Centro de
+  Salud** y se bloquean
   los cambios y nuevos envíos, también en el almacenamiento. El estado se
   conserva hasta el siguiente lunes a las 00:00, cuando se habilita el nuevo
   período sin borrar el inventario existente.
@@ -226,12 +225,12 @@ el inventario temporal y vuelve a cargar la lista de centros.
 
 ### Centros del PDF
 
-[centers.json](./centers.json) contiene los 35 centros y usuarios suministrados
+[centers.json](./centers.json) contiene los 34 centros y usuarios suministrados
 en el PDF. Se conservan los nombres y ubicaciones del documento, sin corregir
 su ortografía. La ubicación se separa del nombre cuando aparece tras ` - `.
-El registro 35 no trae ubicación; se deja en blanco.
+El registro 35 del PDF (MISION MILAGRA DIGESALUD) se eliminó del catálogo.
 
-Al abrir el modo de desarrollo se cargan automáticamente los 35 centros. El
+Al abrir el modo de desarrollo se cargan automáticamente los 34 centros. El
 usuario asignado se muestra al seleccionar cada centro.
 El catálogo no contiene contraseñas y no crea cuentas de acceso de los centros.
 En modo desarrollo, los usuarios se conservan como
@@ -245,7 +244,7 @@ el catálogo una sola vez desde una terminal privada:
 .venv/bin/python store.py import-catalog
 ```
 
-El comando registra los 35 centros con sus nombres y ubicaciones, sin crear
+El comando registra los 34 centros con sus nombres y ubicaciones, sin crear
 cuentas de acceso. Es idempotente: conserva los centros ya registrados y no
 sobrescribe sus datos. No se ha importado nada en Residencias.
 
@@ -429,7 +428,7 @@ Las pruebas utilizan bases temporales, sin tocar datos reales:
 Incluyen aislamiento entre centros, intentos con identificadores ajenos, permisos,
 caducidad y revocación de sesiones, creación y edición atómicas, más de 35 centros y flujos
 de acceso y registro con `streamlit.testing.v1.AppTest`.
-Una prueba recorre individualmente los 35 centros del catálogo y sus siete ítems:
+Una prueba recorre individualmente los 34 centros del catálogo y sus siete ítems:
 verifica encabezados y configuración comunes, PDF exclusivo del centro e ítem,
 bloqueo de envío hasta cargar todas las secciones, confirmación final y
 cantidades independientes en el resumen administrativo.

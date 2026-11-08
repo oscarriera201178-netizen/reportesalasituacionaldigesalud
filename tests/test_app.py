@@ -314,9 +314,8 @@ class AppTests(unittest.TestCase):
         self.assertTrue(any(REPORT_LOADED in item.value for item in app.success))
         self.assertTrue(any(
             item.value == (
-                "SU REPORTE SEMANAL FUE ENVIADO A LA SALA SITUACIONAL DIGESALUD-MPPD. "
-                "ESTE REPORTE SERA ENVIADO AL DIRECTOR DEL CENTRO DE SALUD POR EL DIRECTOR "
-                "GENERAL DE DIGESALUD-MPPPD PARA SU CONFIRMACION"
+                "SU REPORTE SEMANAL FUE ENVIADO A LA SALA SITUACIONAL DIGESALUD-MPPD, "
+                "validar el mismo con el Director del Centro de Salud"
             )
             for item in app.success
         ))
@@ -927,7 +926,7 @@ class AppTests(unittest.TestCase):
                 self.assertFalse(app.exception)
                 self.assertFalse(any(field.type == "password" for field in app.text_input))
                 self.assertFalse(any(form.key == "new_center" for form in app.get("form")))
-                self.assertEqual(len(app.selectbox(key="summary_center").options), 36)
+                self.assertEqual(len(app.selectbox(key="summary_center").options), 35)
                 self.assertEqual(len(app.tabs), 0)
                 self.assertFalse(app.expander)
                 self.assertFalse(any(button.label == "Camas hospitalarias" for button in app.button))
@@ -942,7 +941,7 @@ class AppTests(unittest.TestCase):
         admin = store.login("admin", PASSWORD)
         store.import_centers(admin, load_center_catalog())
         centers = [(row["id"], row["name"]) for row in store.centers(admin)]
-        self.assertEqual(len(centers), 35)
+        self.assertEqual(len(centers), 34)
         with store.transaction() as connection:
             for center_id, _ in centers:
                 store._create_user(connection, f"test-center-{center_id}", PASSWORD, "center", center_id)
@@ -1022,7 +1021,7 @@ class AppTests(unittest.TestCase):
                     ))
             admin = store.login("admin", PASSWORD)
             summary = store.summary(admin)
-            self.assertEqual(len(summary), 35)
+            self.assertEqual(len(summary), 34)
             self.assertTrue(all(row["Estado"] == REPORT_LOADED for row in summary))
             self.assertEqual(
                 {row["Centro"]: row["Camas"] for row in summary},
@@ -1036,17 +1035,17 @@ class AppTests(unittest.TestCase):
         with patch.dict(os.environ, {"SALUD_DEVELOPMENT_MODE": "1"}), patch("store.Store", Store):
             app = AppTest.from_file(APP, default_timeout=30).run()
             self.assertFalse(app.exception)
-            self.assertEqual(len(app.selectbox(key="dev_perspective").options), 36)
+            self.assertEqual(len(app.selectbox(key="dev_perspective").options), 35)
             self.assertEqual(len(app.tabs), 0)
             self.assertFalse(any(field.type == "password" for field in app.text_input))
             self.assertFalse(any(form.key == "new_center" for form in app.get("form")))
             summary_center = app.selectbox(key="summary_center")
-            self.assertEqual(len(summary_center.options), 36)
+            self.assertEqual(len(summary_center.options), 35)
             self.assertEqual(summary_center.value, "all")
             self.assertFalse(app.exception)
             self.assertEqual(len(app.error), 1)
             self.assertIn(REPORT_PENDING.upper(), app.error[0].value)
-            self.assertEqual(app.error[0].value.count("\n- "), 35)
+            self.assertEqual(app.error[0].value.count("\n- "), 34)
             self.assertEqual(len(app.get("download_button")), 1)
             self.assertFalse(any(button.key == "generate_pdf_all" for button in app.button))
             app.run()
@@ -1058,7 +1057,7 @@ class AppTests(unittest.TestCase):
             self.assertFalse(any(form.key.startswith(INVENTORY_FORMS) for form in app.get("form")))
             self.assertTrue(any(box.label == "Centro de salud" for box in app.selectbox))
             app.selectbox(key="dev_perspective").set_value(
-                next(value for value in range(1, 36) if app.selectbox(key="dev_perspective").format_func(value) == center_name)
+                next(value for value in range(1, 35) if app.selectbox(key="dev_perspective").format_func(value) == center_name)
             ).run()
             center_id = app.selectbox(key="dev_perspective").value
             self.assertFalse(app.exception)
