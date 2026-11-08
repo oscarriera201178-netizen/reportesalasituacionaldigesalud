@@ -1595,7 +1595,7 @@ class AppTests(unittest.TestCase):
         app.sidebar.button[0].click().run()
         self.assertFalse(app.tabs)
 
-    def test_center_is_read_only_outside_window_and_pending_next_week(self):
+    def test_center_loads_outside_window_and_pending_next_week(self):
         self.store.bootstrap("admin", PASSWORD)
         admin = self.store.login("admin", PASSWORD)
         self.store.create_center(admin, "Centro Norte", "Norte", "norte", TEMPORARY)
@@ -1611,8 +1611,7 @@ class AppTests(unittest.TestCase):
         self.assertFalse(app.exception)
         self.assertTrue(any(REPORT_PENDING in item.value for item in app.info))
         self.assertFalse(any("Las cargas se habilitan" in item.value for item in app.info))
-        self.assertFalse(any(form.key.startswith(INVENTORY_FORMS) for form in app.get("form")))
-        self.assertFalse(any(button.key == f"load_beds_{center_id}" for button in app.button))
+        self.assertTrue(any(button.key == f"load_beds_{center_id}" for button in app.button))
         self.assertFalse(any(button.key == "submit_inventory" for button in app.button))
         app.run()
         self.assertEqual(len(app.get("download_button")), 1)

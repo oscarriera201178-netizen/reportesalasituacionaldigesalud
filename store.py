@@ -127,7 +127,8 @@ def weekly_status(submitted_at: float, now: float) -> dict:
     )
     end = start + timedelta(days=7)
     loaded = bool(submitted_at and start.timestamp() <= submitted_at < end.timestamp())
-    open_window = start + timedelta(days=3) <= local < start + timedelta(days=5)
+    # Horario de carga (jueves a viernes) deshabilitado temporalmente: la carga queda libre todos los días.
+    open_window = True
     return {
         "submitted_at": submitted_at,
         "period_start": start.timestamp(),

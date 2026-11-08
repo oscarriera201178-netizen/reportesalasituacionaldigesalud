@@ -80,7 +80,7 @@ class StoreTests(unittest.TestCase):
         self.store.initialize_empty_items(self.center, self.north)
         self.assertEqual(self.store.inventory(self.center, self.north), inventory)
 
-    def test_automatic_zeros_preserve_existing_data_and_respect_access_and_schedule(self):
+    def test_automatic_zeros_preserve_existing_data_and_respect_access(self):
         self.store.save_quantity(self.center, self.north, "Camas", "UCI", 7, 3)
         with self.assertRaises(AccessError):
             self.store.initialize_empty_items(self.admin, self.north)
@@ -94,7 +94,9 @@ class StoreTests(unittest.TestCase):
         with self.store.transaction() as connection:
             connection.execute("DELETE FROM plant_counts WHERE center_id=?", (self.north,))
         self.store.initialize_empty_items(token, self.north)
-        self.assertFalse(self.store.inventory(token, self.north)["plant_counts"])
+        plants = self.store.inventory(token, self.north)["plant_counts"]
+        self.assertTrue(plants)
+        self.assertTrue(all(row["operational"] == row["unavailable"] == 0 for row in plants))
 
     def test_password_storage_and_bootstrap_are_private(self):
         self.assertEqual(self.store.path.stat().st_mode & 0o777, 0o600)
@@ -228,8 +230,8 @@ class StoreTests(unittest.TestCase):
             2026, 10, 31, 0, tzinfo=REPORT_TIMEZONE,
         ).timestamp()
         token = self.store.login("norte", CHANGED)
-        with self.assertRaises(InventoryError):
-            self.store.save_category_quantities(token, self.north, "Camas", values)
+        self.store.save_category_quantities(token, self.north, "Camas", values)
+        self.assertFalse(self.store.submission(token, self.north)["loaded"])
         self.clock.return_value = datetime(
             2026, 11, 5, 12, tzinfo=REPORT_TIMEZONE,
         ).timestamp()
@@ -422,8 +424,8 @@ class StoreTests(unittest.TestCase):
                 self.store.save_category_quantities(token, center_id, "Equipos médicos especiales", values)
         self.clock.return_value = datetime(2026, 10, 31, 0, tzinfo=REPORT_TIMEZONE).timestamp()
         token = self.store.login("norte", CHANGED)
-        with self.assertRaises(InventoryError):
-            self.store.save_category_quantities(token, self.north, "Equipos médicos especiales", values)
+        self.store.save_category_quantities(token, self.north, "Equipos médicos especiales", values)
+        self.assertFalse(self.store.submission(token, self.north)["loaded"])
         self.clock.return_value = datetime(2026, 11, 5, 12, tzinfo=REPORT_TIMEZONE).timestamp()
         token = self.store.login("norte", CHANGED)
         values["Tomógrafo"] = (0, 0)
@@ -548,27 +550,27 @@ class StoreTests(unittest.TestCase):
         with self.assertRaisesRegex(InventoryError, REPORT_LOADED):
             self.store.save_quantity(self.center, self.north, "Camas", "UCI", 1, 0)
 
-    def test_weekly_window_boundaries_use_venezuela_time(self):
+    def test_weekly_window_stays_open_all_week_while_schedule_is_disabled(self):
         cases = (
-            ("2026-10-26T03:59:59+00:00", False),
-            ("2026-10-26T04:00:00+00:00", False),
-            ("2026-10-29T03:59:59+00:00", False),
-            ("2026-10-29T04:00:00+00:00", True),
-            ("2026-10-31T03:59:59+00:00", True),
-            ("2026-10-31T04:00:00+00:00", False),
-            ("2026-10-31T12:00:00+00:00", False),
-            ("2026-11-02T03:59:59+00:00", False),
-            ("2026-11-02T04:00:00+00:00", False),
-            ("2026-11-05T04:00:00+00:00", True),
-            ("2027-01-01T21:59:59+00:00", True),
-            ("2027-01-02T03:59:59+00:00", True),
-            ("2027-01-02T04:00:00+00:00", False),
+            "2026-10-26T03:59:59+00:00",
+            "2026-10-26T04:00:00+00:00",
+            "2026-10-29T03:59:59+00:00",
+            "2026-10-29T04:00:00+00:00",
+            "2026-10-31T03:59:59+00:00",
+            "2026-10-31T04:00:00+00:00",
+            "2026-10-31T12:00:00+00:00",
+            "2026-11-02T03:59:59+00:00",
+            "2026-11-02T04:00:00+00:00",
+            "2026-11-05T04:00:00+00:00",
+            "2027-01-01T21:59:59+00:00",
+            "2027-01-02T03:59:59+00:00",
+            "2027-01-02T04:00:00+00:00",
         )
-        for date, expected in cases:
+        for date in cases:
             with self.subTest(date=date):
                 status = weekly_status(0, datetime.fromisoformat(date).timestamp())
-                self.assertEqual(status["open"], expected)
-                self.assertEqual(status["editable"], expected)
+                self.assertTrue(status["open"])
+                self.assertTrue(status["editable"])
                 self.assertEqual(status["status"], REPORT_PENDING)
 
     def test_submission_locks_every_write_and_persists_until_next_monday(self):
@@ -601,7 +603,7 @@ class StoreTests(unittest.TestCase):
             self.admin = self.store.login("admin", PASSWORD)
             status = self.store.submission(self.center, self.north)
             self.assertEqual(status["loaded"], loaded)
-            self.assertFalse(status["editable"])
+            self.assertEqual(status["editable"], not loaded)
             self.assertEqual(self.store.summary(self.admin)[0]["Estado"], status["status"])
         self.clock.return_value = datetime.fromisoformat("2026-11-05T00:00:00-04:00").timestamp()
         self.center = self.store.login("norte", CHANGED)
@@ -610,23 +612,22 @@ class StoreTests(unittest.TestCase):
         self.store.submit(self.center, self.north)
         self.assertEqual(self.store.summary(self.admin)[0]["Estado"], REPORT_LOADED)
 
-    def test_outside_window_rejects_all_writes_and_submission(self):
+    def test_outside_window_allows_all_writes_and_submission(self):
         self.store.save_quantity(self.center, self.north, "Camas", "UCI", 1, 0)
-        for date in (
+        self.store.save_facility(self.center, self.north, "Laboratorio", "Lab", "General", "Operativo")
+        self.store.save_equipment(self.center, self.north, "E1", "Monitor", "Marca", "Modelo", "Serie", "Operativo")
+        for index, date in enumerate((
             "2026-10-31T00:00:00-04:00", "2026-11-01T23:59:59-04:00",
             "2026-11-02T00:00:00-04:00", "2026-11-04T23:59:59-04:00",
-        ):
+        )):
             self.clock.return_value = datetime.fromisoformat(date).timestamp()
             self.center = self.store.login("norte", CHANGED)
-            for operation in (
-                lambda: self.store.submit(self.center, self.north),
-                lambda: self.store.save_quantity(self.center, self.north, "Camas", "Otra", 1, 0),
-                lambda: self.store.save_facility(self.center, self.north, "Laboratorio", "Lab", "General", "Operativo"),
-                lambda: self.store.save_equipment(self.center, self.north, "E1", "Monitor", "Marca", "Modelo", "Serie", "Operativo"),
-            ):
-                with self.subTest(date=date, operation=operation), self.assertRaisesRegex(InventoryError, "23:59"):
-                    operation()
-            self.assertEqual(self.store.submission(self.center, self.north)["status"], REPORT_PENDING)
+            status = self.store.submission(self.center, self.north)
+            self.assertTrue(status["open"])
+            self.assertTrue(status["editable"])
+            self.store.save_quantity(self.center, self.north, "Camas", f"Otra {index}", 1, 0)
+        self.store.submit(self.center, self.north)
+        self.assertEqual(self.store.submission(self.center, self.north)["status"], REPORT_LOADED)
 
     def test_concurrent_weekly_submissions_only_accept_one(self):
         self.store.save_quantity(self.center, self.north, "Camas", "UCI", 1, 0)

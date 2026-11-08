@@ -139,7 +139,7 @@ mostrar el texto completo.
   PDF, únicamente cuando se han guardado todos los tipos de camas, vehículos,
   banco de sangre, laboratorios central y de emergencia, quirófanos, equipos
   médicos especiales y plantas eléctricas, y los datos están completos.
-  Al abrir el portal del centro durante el horario habilitado, los tipos sin
+  Al abrir el portal del centro, los tipos sin
   registros se guardan automáticamente en **00** (equivalente a **No** en
   instalaciones). Estos valores iniciales no cuentan como una carga confirmada:
   es obligatorio pulsar **CARGAR DATOS** en las siete secciones, incluso si
@@ -164,10 +164,10 @@ mostrar el texto completo.
   guarda sin enviar la semana. Los registros «En pisos» y «En emergencias» se
   conservan; al guardar se registra cero o una unidad por tipo, con advertencia
   si antes había varias. Su PDF incluye únicamente quirófanos.
-- El horario de registro, modificación y envío es desde el **jueves a las
-  00:00 hasta el viernes a las 23:59**, incluido ese último minuto, en la zona horaria
+- El registro, modificación y envío están habilitados **todos los días** de
+  forma temporal, hasta que se implemente el horario definitivo. La zona
+  horaria de referencia para los períodos semanales sigue siendo
   **America/Caracas (Venezuela)**, independientemente de la hora del servidor.
-  Fuera del horario solo se permite consultar el inventario y descargar su PDF.
 - Después del envío se muestra centrado **SU REPORTE SEMANAL FUE ENVIADO A LA SALA
   SITUACIONAL DIGESALUD-MPPD. ESTE REPORTE SERA ENVIADO AL DIRECTOR DEL CENTRO
   DE SALUD POR EL DIRECTOR GENERAL DE DIGESALUD-MPPPD PARA SU CONFIRMACION**
@@ -207,10 +207,10 @@ contraseña interna aleatoria y aparecen en **Ver portal como**.
 No muestra formularios de administración de centros ni cuentas. No uses
 información real ni publiques el puerto como servicio de producción. La pantalla
 muestra una advertencia permanente.
-Solo en modo desarrollo, los centros pueden registrar y enviar datos cualquier
-día para realizar pruebas. Se mantiene un único envío por
-centro y semana y el bloqueo de cambios después de enviar. El modo con cuentas
-y datos persistentes conserva el horario de Venezuela sin cambios.
+Los centros pueden registrar y enviar datos cualquier día, tanto en modo
+desarrollo como con cuentas, mientras el horario definitivo esté pendiente.
+Se mantiene un único envío por
+centro y semana y el bloqueo de cambios después de enviar.
 
 En la barra lateral, **Ver portal como** permite alternar entre la vista
 **DIGESALUD-MPPD (Administrador)**, que solo consulta y descarga PDF, y la vista
