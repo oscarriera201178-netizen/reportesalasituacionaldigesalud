@@ -380,6 +380,7 @@ def facility_presence_panel(store, token, center_id, rows, category, *, editable
             inventory_heading(label.upper())
             selected = presence_fields(
                 center_id, rows, category, kind, label.lower(), prefix, editable=editable,
+                with_quantity=category == "Quirófano",
             )
             values[kind] = selected
         if category == "Quirófano":
@@ -387,7 +388,7 @@ def facility_presence_panel(store, token, center_id, rows, category, *, editable
                 st.caption("Cargar datos guarda ambos quirófanos sin enviar el inventario semanal.")
                 if confirm_load_button(f"load_theatres_{center_id}"):
                     if any(value is None for value in values.values()):
-                        st.error("Indica si hay quirófano en piso y en emergencia, y sus estados cuando corresponda.")
+                        st.error("Indica si hay quirófano en piso y en emergencia, y sus cantidades cuando corresponda.")
                     else:
                         save(store.load_section, token, center_id, category, values)
             return
@@ -451,7 +452,7 @@ def facility_presence_panel(store, token, center_id, rows, category, *, editable
         save(store.load_section, token, center_id, category, values)
 
 
-def presence_fields(center_id, rows, category, kind, name, widget_prefix, *, editable):
+def presence_fields(center_id, rows, category, kind, name, widget_prefix, *, editable, with_quantity=False):
     banks = [row for row in rows if row["category"] == category and row["kind"] == kind]
     operational = sum(row["operational"] for row in banks)
     unavailable = sum(row["unavailable"] for row in banks)
@@ -460,6 +461,8 @@ def presence_fields(center_id, rows, category, kind, name, widget_prefix, *, edi
             st.info(f"Todavía no se ha indicado si hay {name}.")
         elif operational + unavailable == 0:
             st.write(f"**¿Hay {name}?** No")
+        elif with_quantity:
+            st.write(f"**{name}:** {operational:02d} operativos, {unavailable:02d} fuera de servicio")
         else:
             st.write(f"**¿Hay {name}?** Sí")
             states = []
@@ -469,17 +472,36 @@ def presence_fields(center_id, rows, category, kind, name, widget_prefix, *, edi
                 states.append("Fuera de servicio")
             st.write("**Estado:** " + " / ".join(states))
         return
-    if operational + unavailable > 1:
+    if not with_quantity and operational + unavailable > 1:
         st.warning(
             f"Hay cantidades anteriores de más de un {name}. "
             "Selecciona la presencia y el estado; al cargar se sustituirán por un máximo de una unidad."
         )
     presence = st.radio(
         f"¿Hay {name}?", ("Sí", "No"),
-        index=None if not banks or operational + unavailable > 1 else (0 if operational + unavailable else 1),
+        index=None if not banks or (not with_quantity and operational + unavailable > 1) else (0 if operational + unavailable else 1),
         key=f"{widget_prefix}_presence_{center_id}",
         on_change=inventory_changed,
     )
+    if with_quantity:
+        if presence != "Sí":
+            return (0, 0) if presence == "No" else None
+        columns = st.columns(2)
+        with columns[0]:
+            operational_count = st.number_input(
+                f"Cantidad operativa de {name}", min_value=1, max_value=1_000_000,
+                value=max(operational, 1), format="%02d",
+                key=f"{widget_prefix}_operational_{center_id}",
+                on_change=inventory_changed,
+            )
+        with columns[1]:
+            unavailable_count = st.number_input(
+                f"Cantidad fuera de servicio de {name}", min_value=0, max_value=1_000_000,
+                value=unavailable, format="%02d",
+                key=f"{widget_prefix}_unavailable_{center_id}",
+                on_change=inventory_changed,
+            )
+        return (operational_count, unavailable_count)
     state = None
     if presence == "Sí":
         state = st.radio(
@@ -809,8 +831,6 @@ def center_view(store, token, center_id):
         if st.button("EDITAR", key=f"edit_section_{center_id}_{selected_category}"):
             save(store.edit_section, token, center_id, selected_category)
     editable = editable and not loaded
-    if editable:
-        st.caption("Si no tienes unidades, deja 00 y pulsa CARGAR DATOS en cada ítem antes de enviar.")
     if missing := st.session_state.pop("_quantity_submission_missing", None):
         st.error(
             "No se pudo enviar. Completa estos datos y vuelve a intentarlo:\n\n"

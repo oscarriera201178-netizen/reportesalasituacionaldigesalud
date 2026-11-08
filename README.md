@@ -53,8 +53,8 @@ mostrar el texto completo.
   laboratorios y quirófanos aparecen en secciones independientes, accesibles
   con botones. Camas y vehículos muestran cantidades operativas e inoperativas
   que comienzan en `00`; el cero indica que no hay unidades. Los totales suman
-  ambas cantidades. Bancos, laboratorios y quirófanos registran presencia y
-  estado. **Cargar datos** guarda cada sección sin enviar el inventario semanal.
+  ambas cantidades. Bancos y laboratorios registran presencia y
+  estado; los quirófanos registran además sus cantidades. **Cargar datos** guarda cada sección sin enviar el inventario semanal.
   Los
   registros individuales anteriores de bancos, laboratorios y quirófanos se
   convierten a cantidades al actualizar la base, y se conservan como histórico.
@@ -159,11 +159,11 @@ mostrar el texto completo.
   incluidas las que continúan vacías en 00.
   Cada centro puede enviar una sola vez por semana.
 - **QUIRÓFANOS** muestra **Quirófano en piso** y **Quirófano en emergencia**,
-  con títulos verdes, selección **Sí / No** y estado **Operativo / Fuera de
-  servicio** por separado. Se exige completar ambos para **Cargar datos**, que
+  con títulos verdes, selección **Sí / No** y, cuando hay, las **cantidades
+  operativas y fuera de servicio** de cada uno. Se exige completar ambos para
+  **Cargar datos**, que
   guarda sin enviar la semana. Los registros «En pisos» y «En emergencias» se
-  conservan; al guardar se registra cero o una unidad por tipo, con advertencia
-  si antes había varias. Su PDF incluye únicamente quirófanos.
+  conservan. Su PDF incluye únicamente quirófanos.
 - El registro, modificación y envío están habilitados **todos los días** de
   forma temporal, hasta que se implemente el horario definitivo. La zona
   horaria de referencia para los períodos semanales sigue siendo
@@ -357,8 +357,8 @@ Los formularios usan los tipos del modelo entregado:
 - Camas: hospitalización, observación, trauma shock, UTIA, UTIP y UCI.
 - Ambulancias: soporte básico, soporte avanzado y tácticas.
 - Vehículos protocolares: carros/camionetas, carga pesada/autobús y motos.
-- Quirófanos: en pisos y en emergencias.
-- Bancos de sangre y laboratorios: unidades operativas e inoperativas.
+- Quirófanos: cantidades operativas y fuera de servicio en pisos y en emergencias.
+- Bancos de sangre y laboratorios: presencia y estado.
 - Equipos médicos especiales: cantidades operativas e inoperativas agrupadas por
   los ocho tipos del formulario. Se excluyen los equipos individuales históricos.
 

@@ -738,7 +738,8 @@ class AppTests(unittest.TestCase):
             for row in self.store.inventory(token, center_id)["facility_counts"]
         ))
         app.radio(key=f"emergency_theatre_presence_{center_id}").set_value("Sí").run()
-        app.radio(key=f"emergency_theatre_state_{center_id}").set_value("Fuera de servicio").run()
+        app.number_input(key=f"emergency_theatre_operational_{center_id}").set_value(2).run()
+        app.number_input(key=f"emergency_theatre_unavailable_{center_id}").set_value(1).run()
         self.confirm_load(app, f"load_theatres_{center_id}")
         self.assertFalse(app.exception)
         rows = [
@@ -747,7 +748,7 @@ class AppTests(unittest.TestCase):
         ]
         self.assertEqual(
             {row["kind"]: (row["operational"], row["unavailable"]) for row in rows},
-            {"En pisos": (1, 0), "En emergencias": (0, 1)},
+            {"En pisos": (1, 0), "En emergencias": (2, 1)},
         )
         self.assertFalse(self.store.submission(token, center_id)["loaded"])
         app.run()
@@ -1072,7 +1073,7 @@ class AppTests(unittest.TestCase):
             self.assertFalse(app.expander)
             self.assertFalse(any(box.label == "Centro de salud" for box in app.selectbox))
             self.assertFalse(app.subheader)
-            self.assertEqual(len(app.caption) - len(app.sidebar.caption), 3)
+            self.assertEqual(len(app.caption) - len(app.sidebar.caption), 2)
             self.assertEqual(app.button(key="inventory_category_Camas").label, "**CAMAS HOSPITALARIAS**")
             app.run()
             self.assertEqual(len(app.get("download_button")), 1)
@@ -1511,7 +1512,6 @@ class AppTests(unittest.TestCase):
         self.assertFalse(any(form.key == "new_center" for form in app.get("form")))
         self.assertFalse(any(button.key == "generate_pdf_all" for button in app.button))
         self.assertFalse(any(button.key == "submit_inventory" for button in app.button))
-        self.assertTrue(any("pulsa CARGAR DATOS en cada ítem" in item.value for item in app.caption))
         center_id = self.store.centers(token)[0]["id"]
         app.number_input(key=f"category_operational_{center_id}_Camas_5").set_value(5)
         app.number_input(key=f"category_unavailable_{center_id}_Camas_5").set_value(2)
