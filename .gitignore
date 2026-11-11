@@ -64,6 +64,11 @@ db.sqlite3-journal
 
 # Base de datos local y respaldos del inventario
 data/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+*.sqlite3-journal
+*.dump
 
 # Flask stuff:
 instance/

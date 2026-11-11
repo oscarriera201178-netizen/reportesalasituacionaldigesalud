@@ -303,14 +303,156 @@ a iniciar sesión.
 Por defecto, el almacenamiento independiente es `data/inventario.sqlite3`.
 Puedes configurar `SALUD_DATA_DIR` con una ruta absoluta privada y persistente
 **antes** de crear la cuenta y ejecutar el servidor. No cambies esa ruta sin
-trasladar y respaldar la base existente. No se usa Turso ni otra base externa
-en esta primera versión.
+trasladar y respaldar la base existente. Si configuras `DATABASE_URL`, el portal
+utiliza PostgreSQL externo en lugar de SQLite. Una conexión inválida o fallida
+se muestra como error: nunca se reemplaza silenciosamente por una base local.
+Los datos de este repositorio no son necesariamente los datos de producción.
+
+### PostgreSQL gratuito en Supabase (São Paulo)
+
+PostgreSQL es software libre. Supabase ofrece alojamiento gratuito con límites:
+[500 MB de base y pausa tras una semana de inactividad](https://supabase.com/pricing).
+Selecciona explícitamente **South America (São Paulo), `sa-east-1`** entre
+las [regiones disponibles](https://supabase.com/docs/guides/platform/regions);
+la región general «Americas» no significa Brasil. La cercanía geográfica no
+garantiza menor latencia: también importa la conexión entre Community Cloud y
+la base. No hay garantía de disponibilidad continua en el plan gratuito.
+
+#### 1. Proteger los datos existentes antes de publicar cambios
+
+**No reinicies, redespliegues ni cambies secretos de la aplicación actual antes
+de obtener un respaldo privado de su SQLite de producción.** Publicar código
+para añadir un botón de respaldo también puede reconstruir el contenedor y
+perder el archivo que intentas proteger.
+
+Esta versión incluye, solo para el administrador usando SQLite, **Respaldo de
+datos → Preparar respaldo → Descargar respaldo privado** en la barra lateral.
+Genera una copia consistente mediante la API de backup de SQLite; incluye
+cuentas, hashes de contraseñas, inventarios, sesiones y fechas. El botón
+solo estará disponible cuando esta versión esté ejecutándose; no recupera
+archivos de una versión anterior ni de otro contenedor.
+
+Si la versión publicada aún no tiene el botón, necesitas obtener el archivo
+desde ese entorno o coordinar su recuperación con el soporte del alojamiento.
+Si no tienes acceso al archivo, **detén la migración**: no se puede garantizar
+la conservación de datos exportando solamente PDF o copiando el repositorio.
+
+Guarda el respaldo fuera de Git, en una ubicación privada, y conserva otra
+copia independiente. Para el corte final, coordina que nadie cargue datos
+desde el momento del respaldo hasta terminar la migración; lo ingresado después
+de esa copia no se trasladará automáticamente.
+
+#### 2. Crear el destino y ensayar la migración
+
+Si decides **comenzar con una base nueva**, sin recuperar los inventarios
+anteriores, no ejecutes la migración. Con el proyecto vacío y `DATABASE_URL`
+introducida en una terminal privada como se explica abajo, ejecuta:
+
+```bash
+python store.py bootstrap
+python store.py import-catalog
+unset DATABASE_URL
+```
+
+El primer comando solicita un usuario administrador y una contraseña de al
+menos 12 caracteres, con confirmación. El segundo importa los centros, pero no
+crea sus cuentas ni recupera cargas anteriores. Verifica que ambos comandos
+terminen correctamente antes de publicar los cambios y configurar Secrets
+según el paso 3. Después, asigna cuentas y contraseñas desde **Cuentas de
+centros**. Este procedimiento crea un inventario nuevo, no restaura el anterior.
+
+1. Crea un proyecto Supabase en São Paulo y guarda su contraseña en privado.
+2. En **Connect → Session pooler**, copia la cadena PostgreSQL en modo sesión
+   (puerto **5432**), compatible con IPv4 y Community Cloud. No uses la URL de
+   la API ni las claves `anon`/`service_role`. Obtén el host y usuario del panel;
+   no los deduzcas del nombre de la región.
+3. Añade `sslmode=require` a la cadena (con `?` o `&`, según corresponda).
+   Codifica los caracteres reservados de la contraseña en formato URL.
+   Consulta la [guía de conexión](https://supabase.com/docs/guides/database/connecting-to-postgres).
+4. En una terminal privada con las dependencias instaladas, introduce la cadena
+   sin dejarla en el historial:
+
+   ```bash
+   read -r -s -p "Conexión PostgreSQL privada: " DATABASE_URL
+   echo
+   export DATABASE_URL
+   python migrate_database.py --source /ruta/privada/inventario.sqlite3
+   ```
+
+Sin `--apply`, se ensaya la copia y se comparan todos los valores dentro de una
+transacción que se revierte; el destino queda sin datos, aunque se crean las
+tablas. El origen se abre en modo lectura y sus actualizaciones de esquema se
+realizan solo en una copia temporal. Se comprueba su integridad, las referencias
+y la presencia de la cuenta administradora. Se rechazan esquemas desconocidos
+y destinos con datos; no se borra ni sobrescribe información.
+
+PostgreSQL usa `citext` para las columnas sin distinción de mayúsculas. Según
+la configuración regional, puede considerar iguales nombres con letras no ASCII
+que SQLite distinguía; cualquier conflicto cancela la copia completa. Resuélvelo
+en una copia privada antes de repetir, sin modificar el único respaldo.
+
+#### 3. Copiar y conectar producción
+
+Tras un ensayo satisfactorio y con las cargas detenidas:
+
+```bash
+python migrate_database.py --source /ruta/privada/inventario.sqlite3 --apply
+unset DATABASE_URL
+```
+
+El comando verifica cada fila, confirma la transacción solo si coincide y ajusta
+las secuencias para que los nuevos registros no reutilicen números existentes.
+Conserva cuentas y contraseñas actuales, permisos, históricos y estados semanales.
+No ejecutes dos aplicaciones que acepten cargas en bases diferentes.
+
+Solo después de verificar la migración, publica estos cambios y configura en
+**Streamlit Community Cloud → Settings → Secrets**, en el nivel superior:
+
+```toml
+DATABASE_URL = "postgresql://USUARIO:CLAVE_CODIFICADA@HOST:5432/postgres?sslmode=require"
+```
+
+Reemplaza los marcadores únicamente en Secrets, no en el repositorio. Conserva
+otros secretos existentes; no envíes la cadena por chat. Una base remota sin
+cuenta administradora bloquea el arranque en vez de crear cuentas nuevas.
+Verifica el acceso con las cuentas originales, los totales y los PDF antes de
+reanudar las cargas.
+
+La conexión se usa solo en el servidor. Las tablas tienen Row Level Security
+sin políticas públicas; usa la cuenta PostgreSQL propietaria para esta aplicación
+y no añadas políticas que expongan usuarios, sesiones o inventarios a la API.
+El almacenamiento mantiene transacciones serializadas para conservar los
+controles de permisos y carga semanal existentes.
+
+#### 4. Respaldos independientes y pruebas
+
+El plan gratuito no incluye los respaldos diarios de los planes de pago.
+Configura exportaciones privadas regulares y prueba su restauración:
+[documentación de respaldos](https://supabase.com/docs/guides/platform/backups).
+Desde una terminal privada con herramientas PostgreSQL de versión compatible,
+usa una conexión directa o de sesión, nunca el pooler de transacciones:
+
+```bash
+umask 077
+pg_dump "$DATABASE_URL" --format=custom --no-owner --no-acl --file=/ruta/privada/inventario.dump
+```
+
+Vuelve a introducir `DATABASE_URL` en privado para este comando. Guarda copias
+fuera del proveedor y restaura primero en un proyecto de prueba vacío con
+`pg_restore --no-owner --no-acl --dbname="$DATABASE_URL" /ruta/privada/inventario.dump`.
+No restaures sobre producción sin un plan de recuperación.
+
+Las pruebas normales se ejecutan con `python -m unittest discover -s tests`.
+Las pruebas de integración PostgreSQL se habilitan con
+`SALUD_TEST_DATABASE_URL` apuntando **exclusivamente a un servidor de pruebas**:
+crean y eliminan bases temporales y requieren permiso para crear bases y roles.
+Nunca uses credenciales ni datos de producción para estas pruebas.
 
 ### Demostración en Streamlit Community Cloud
 
 Streamlit Community Cloud puede ejecutar esta aplicación directamente desde un
-repositorio de GitHub. Es adecuada para demostraciones con datos ficticios,
-pero no para conservar inventarios: la base SQLite está en el sistema de
+repositorio de GitHub. Sin PostgreSQL externo, es adecuada para demostraciones
+con datos ficticios, pero no para conservar inventarios: la base SQLite está en el sistema de
 archivos local y puede perderse al reiniciar o volver a desplegar la aplicación.
 No cargues información real.
 
@@ -336,7 +478,7 @@ No cargues información real.
    lateral, entra a **Cuentas de centros** y asigna usuario y contraseña a
    cada centro seleccionándolo de la lista, sin volver a escribir su nombre.
 
-Si Community Cloud reinicia o reconstruye la aplicación, la cuenta se puede
+Si usas SQLite y Community Cloud reinicia o reconstruye la aplicación, la cuenta se puede
 volver a crear desde los secretos, pero los centros y los inventarios guardados
 en SQLite pueden desaparecer. Para uso real se requiere una base de datos
 externa persistente y copias de seguridad. Consulta la

@@ -3,7 +3,6 @@ import logging
 import os
 import re
 import secrets
-import sqlite3
 import tempfile
 import time
 from collections.abc import Mapping
@@ -14,6 +13,7 @@ from pathlib import Path
 import streamlit as st
 import pymupdf
 from streamlit.errors import StreamlitSecretNotFoundError
+from database import DATABASE_ERRORS
 
 from report import (
     SUMMARY_CATEGORIES, generate_pdf, report_data, report_types,
@@ -27,6 +27,44 @@ from store import (
 
 
 LOGGER = logging.getLogger(__name__)
+
+
+@st.cache_resource
+def remote_store(database_url):
+    return Store(database_url=database_url)
+
+
+def configured_store():
+    try:
+        database_url = st.secrets["DATABASE_URL"]
+    except (KeyError, StreamlitSecretNotFoundError):
+        database_url = os.environ.get("DATABASE_URL")
+    if database_url is not None:
+        if not isinstance(database_url, str) or not database_url:
+            raise InventoryError("DATABASE_URL debe ser una conexión PostgreSQL válida.")
+        store = remote_store(database_url)
+        if not store.initialized():
+            raise InventoryError(
+                "La base PostgreSQL no contiene la cuenta administradora. "
+                "Migra y verifica el respaldo antes de conectar producción."
+            )
+        return store
+    return Store()
+
+
+def backup_controls(store, token):
+    if store.database_url:
+        return
+    with st.sidebar.expander("Respaldo de datos"):
+        st.warning("SQLite local no garantiza persistencia en Community Cloud. Guarda una copia privada.")
+        if st.button("Preparar respaldo", key="prepare_sqlite_backup"):
+            st.download_button(
+                "Descargar respaldo privado", data=store.sqlite_backup(token),
+                file_name=f"inventario-{datetime.now(REPORT_TIMEZONE):%Y%m%d-%H%M%S}.sqlite3",
+                mime="application/octet-stream", key="download_sqlite_backup",
+                on_click="ignore",
+            )
+        st.caption("Incluye cuentas e inventarios. No lo subas a GitHub ni lo compartas.")
 
 
 @st.cache_data
@@ -1146,7 +1184,7 @@ def main():
         store = Store(path, allow_out_of_schedule=True)
         token, actor = development_login(store, password, development_centers)
     else:
-        store = Store()
+        store = configured_store()
         bootstrap_from_secrets(store)
         token, actor = login(store)
     shield.empty()
@@ -1155,6 +1193,7 @@ def main():
         portal_heading(banner, title, "SALA SITUACIONAL DIGESALUD-MPPD", single_line=True)
         subtitle.empty()
         if not development:
+            backup_controls(store, token)
             page = st.sidebar.radio(
                 "Administración", ["Informes", "Cuentas de centros"], key="admin_page",
             )
@@ -1209,7 +1248,7 @@ if __name__ == "__main__":
         st.stop()
     except InventoryError as error:
         st.error(str(error))
-    except (sqlite3.Error, OSError):
+    except (*DATABASE_ERRORS, OSError):
         LOGGER.exception("Error de almacenamiento del inventario")
         st.error("No se pudo acceder al almacenamiento. Revisa el servidor antes de continuar.")
         st.stop()

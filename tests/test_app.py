@@ -59,6 +59,59 @@ class AppTests(unittest.TestCase):
             with self.assertRaisesRegex(InventoryError, "debe ser una tabla"):
                 app_module.bootstrap_from_secrets(self.store)
 
+    def test_remote_database_secret_is_forwarded_without_local_fallback(self):
+        self.store.bootstrap("admin", PASSWORD)
+        database_url = "postgresql://example.invalid/postgres?sslmode=require"
+        with (
+            patch.object(app_module.st, "secrets", {"DATABASE_URL": database_url}),
+            patch.object(app_module, "remote_store", return_value=self.store) as remote,
+            patch.object(app_module, "Store") as local,
+        ):
+            self.assertIs(app_module.configured_store(), self.store)
+            remote.assert_called_once_with(database_url)
+            local.assert_not_called()
+        for invalid in ("", 42):
+            with patch.object(app_module.st, "secrets", {"DATABASE_URL": invalid}):
+                with self.assertRaises(InventoryError):
+                    app_module.configured_store()
+
+    def test_empty_remote_database_does_not_bootstrap_replacement_accounts(self):
+        with (
+            patch.object(app_module.st, "secrets", {"DATABASE_URL": "postgresql://example.invalid/postgres"}),
+            patch.object(app_module, "remote_store", return_value=self.store),
+        ):
+            with self.assertRaisesRegex(InventoryError, "Migra y verifica"):
+                app_module.configured_store()
+            self.assertFalse(self.store.initialized())
+
+    def test_remote_connection_failure_does_not_open_sqlite(self):
+        import psycopg
+
+        with (
+            patch.object(app_module.st, "secrets", {"DATABASE_URL": "postgresql://example.invalid/postgres"}),
+            patch.object(app_module, "remote_store", side_effect=psycopg.OperationalError("Test connection failure")),
+            patch.object(app_module, "Store") as local,
+        ):
+            with self.assertRaises(psycopg.OperationalError):
+                app_module.configured_store()
+            local.assert_not_called()
+
+    def test_only_admin_can_download_private_sqlite_backup(self):
+        self.store.bootstrap("admin", PASSWORD)
+        admin = self.store.login("admin", PASSWORD)
+        app = AppTest.from_file(APP, default_timeout=30)
+        app.session_state["token"] = admin
+        app.run()
+        app.button(key="prepare_sqlite_backup").click().run()
+        self.assertFalse(app.exception)
+        self.assertEqual(len(app.get("download_button")), 1)
+        self.store.create_center(admin, "Centro", "", "centro", TEMPORARY)
+        center_app = AppTest.from_file(APP, default_timeout=30)
+        center_app.session_state["token"] = self.store.login("centro", TEMPORARY)
+        center_app.run()
+        self.assertFalse(center_app.exception)
+        self.assertFalse(any(button.key == "prepare_sqlite_backup" for button in center_app.button))
+
     def test_streamlit_secrets_import_center_catalog_once(self):
         credentials = {"bootstrap_admin": {"username": "admin", "password": PASSWORD}}
         with patch.object(app_module.st, "secrets", credentials):

@@ -7,11 +7,16 @@ import os
 import re
 import secrets
 import sqlite3
+import tempfile
 import time
 from contextlib import contextmanager
 from datetime import datetime, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from database import (
+    DATABASE_ERRORS, INTEGRITY_ERRORS, TABLES, SQLiteConnection, postgres_connection,
+)
 
 
 QUANTITY_CATEGORIES = ("Camas", "Vehículos")
@@ -139,14 +144,32 @@ def weekly_status(submitted_at: float, now: float) -> dict:
 
 
 class Store:
-    def __init__(self, path: Path | None = None, *, allow_out_of_schedule: bool = False):
+    def __init__(
+        self, path: Path | None = None, *, allow_out_of_schedule: bool = False,
+        database_url: str | None = None, require_empty: bool = False,
+    ):
         self.allow_out_of_schedule = allow_out_of_schedule
+        if path is not None and database_url is not None:
+            raise InventoryError("Selecciona SQLite o PostgreSQL, no ambos.")
+        self.database_url = database_url if database_url is not None else (
+            os.environ.get("DATABASE_URL") if path is None else None
+        )
+        if self.database_url is not None and (
+            not isinstance(self.database_url, str)
+            or not self.database_url.startswith(("postgresql://", "postgres://"))
+        ):
+            raise InventoryError("DATABASE_URL debe ser una conexión PostgreSQL válida.")
         directory = Path(os.environ.get(
             "SALUD_DATA_DIR", str(Path(__file__).parent / "data"),
         ))
         self.path = path if path is not None else directory / "inventario.sqlite3"
-        self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        if not self.database_url:
+            self.path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         with self.connect() as connection:
+            if self.database_url:
+                if require_empty and not connection.is_empty():
+                    raise InventoryError("La base de destino debe estar vacía; no se sobrescribió información.")
+                connection.execute("CREATE EXTENSION IF NOT EXISTS citext")
             connection.executescript("""
                 CREATE TABLE IF NOT EXISTS centers (
                     id INTEGER PRIMARY KEY,
@@ -225,7 +248,7 @@ class Store:
                 CREATE TABLE IF NOT EXISTS special_laboratories (
                     center_id INTEGER NOT NULL REFERENCES centers(id),
                     slot INTEGER NOT NULL CHECK(slot BETWEEN 1 AND 3),
-                    name TEXT NOT NULL,
+                    name TEXT NOT NULL COLLATE NOCASE,
                     state TEXT NOT NULL CHECK(state IN ('Operativo', 'Fuera de servicio')),
                     PRIMARY KEY(center_id, slot),
                     UNIQUE(center_id, name COLLATE NOCASE)
@@ -263,12 +286,14 @@ class Store:
                     UNIQUE(center_id, code)
                 );
             """)
-            columns = {row["name"] for row in connection.execute("PRAGMA table_info(centers)")}
+            columns = set(connection.table_columns("centers"))
             if "assigned_username" not in columns:
-                connection.execute("ALTER TABLE centers ADD COLUMN assigned_username TEXT NOT NULL DEFAULT ''")
+                kind = "CITEXT" if self.database_url else "TEXT"
+                connection.execute(f"ALTER TABLE centers ADD COLUMN assigned_username {kind} NOT NULL DEFAULT ''")
             for column in ("submitted_at", "changed_at"):
                 if column not in columns:
-                    connection.execute(f"ALTER TABLE centers ADD COLUMN {column} REAL NOT NULL DEFAULT 0")
+                    kind = "DOUBLE PRECISION" if self.database_url else "REAL"
+                    connection.execute(f"ALTER TABLE centers ADD COLUMN {column} {kind} NOT NULL DEFAULT 0")
             connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS assigned_center_user "
                 "ON centers(assigned_username COLLATE NOCASE) WHERE assigned_username != ''",
@@ -321,11 +346,19 @@ class Store:
             # El administrador asigna y cambia las claves de los centros: ninguna
             # cuenta de centro debe quedar obligada a cambiar su contraseña.
             connection.execute("UPDATE users SET must_change=0 WHERE role='center'")
-        self.path.chmod(0o600)
+            if self.database_url:
+                for table in TABLES:
+                    connection.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
+        if not self.database_url:
+            self.path.chmod(0o600)
 
     @contextmanager
     def connect(self):
-        connection = sqlite3.connect(self.path, timeout=10)
+        if self.database_url:
+            with postgres_connection(self.database_url) as connection:
+                yield connection
+            return
+        connection = sqlite3.connect(self.path, timeout=10, factory=SQLiteConnection)
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")
         try:
@@ -337,7 +370,8 @@ class Store:
     @contextmanager
     def transaction(self):
         with self.connect() as connection:
-            connection.execute("BEGIN IMMEDIATE")
+            if not self.database_url:
+                connection.execute("BEGIN IMMEDIATE")
             yield connection
 
     def initialized(self) -> bool:
@@ -345,6 +379,18 @@ class Store:
             return connection.execute(
                 "SELECT 1 FROM users WHERE role='admin'",
             ).fetchone() is not None
+
+    def sqlite_backup(self, token: str) -> bytes:
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+        if self.database_url:
+            raise InventoryError("Para PostgreSQL utiliza pg_dump en una terminal privada.")
+        with tempfile.TemporaryDirectory(prefix="salud-respaldo-") as directory:
+            path = Path(directory) / "inventario.sqlite3"
+            with self.connect() as source, sqlite3.connect(path) as target:
+                source.backup(target)
+            path.chmod(0o600)
+            return path.read_bytes()
 
     def _create_user(self, connection, username, password, role, center_id):
         username = _username(username)
@@ -356,7 +402,7 @@ class Store:
                 "VALUES(?,?,?,?,?,0)",
                 (username, salt, _hash(password, salt), role, center_id),
             )
-        except sqlite3.IntegrityError as error:
+        except INTEGRITY_ERRORS as error:
             raise InventoryError("El usuario o la cuenta del centro ya existe.") from error
 
     def bootstrap(self, username: str, password: str) -> None:
@@ -469,13 +515,13 @@ class Store:
         with self.transaction() as connection:
             self._actor(connection, token, admin=True)
             try:
-                cursor = connection.execute(
+                center_id = connection.insert_id(
                     "INSERT INTO centers(name,location,assigned_username) VALUES(?,?,?)",
                     (name, location, username),
                 )
-            except sqlite3.IntegrityError as error:
+            except INTEGRITY_ERRORS as error:
                 raise InventoryError("Ya existe un centro con ese nombre o usuario asignado.") from error
-            self._create_user(connection, username, password, "center", cursor.lastrowid)
+            self._create_user(connection, username, password, "center", center_id)
 
     def create_account(self, token: str, center_id: int, username: str, password: str) -> None:
         username = _username(username)
@@ -508,7 +554,7 @@ class Store:
                 if account and account["username"] != username:
                     connection.execute("UPDATE users SET username=? WHERE id=?", (username, account["id"]))
                     connection.execute("DELETE FROM sessions WHERE user_id=?", (account["id"],))
-            except sqlite3.IntegrityError as error:
+            except INTEGRITY_ERRORS as error:
                 raise InventoryError("Ya existe un centro con ese nombre o usuario asignado.") from error
 
     def _import_centers(self, connection, catalog: list[dict]) -> int:
@@ -546,7 +592,7 @@ class Store:
                     "INSERT INTO centers(name,location,assigned_username) VALUES(?,?,?)",
                     (name, location, username),
                 )
-            except sqlite3.IntegrityError as error:
+            except INTEGRITY_ERRORS as error:
                 raise InventoryError("El usuario del catálogo ya está asignado a otro centro.") from error
             added += 1
         return added
@@ -569,13 +615,13 @@ class Store:
             self._actor(connection, token, admin=True)
             now = time.time()
             rows = [dict(row) for row in connection.execute("""
-                SELECT c.id AS "N°", c.name AS Centro, c.submitted_at AS Estado,
-                    COALESCE(q.beds, 0) AS Camas,
-                    COALESCE(q.vehicles, 0) AS Vehículos,
+                SELECT c.id AS "N°", c.name AS "Centro", c.submitted_at AS "Estado",
+                    COALESCE(q.beds, 0) AS "Camas",
+                    COALESCE(q.vehicles, 0) AS "Vehículos",
                     COALESCE(f.banks, 0) AS "Bancos de sangre",
-                    COALESCE(f.labs, 0) AS Laboratorios,
-                    COALESCE(f.theatres, 0) AS Quirófanos,
-                    COALESCE(e.total, 0) AS Equipos,
+                    COALESCE(f.labs, 0) AS "Laboratorios",
+                    COALESCE(f.theatres, 0) AS "Quirófanos",
+                    COALESCE(e.total, 0) AS "Equipos",
                     COALESCE(p.total, 0) AS "Plantas eléctricas"
                 FROM centers c
                 LEFT JOIN (
@@ -600,7 +646,7 @@ class Store:
                         SELECT f.center_id, f.category, 1 AS units
                         FROM facilities f
                         WHERE f.id NOT IN (SELECT facility_id FROM migrated_facilities)
-                    ) GROUP BY center_id
+                    ) AS inventory_units GROUP BY center_id
                 ) f ON f.center_id=c.id
                 LEFT JOIN (
                     SELECT center_id, SUM(operational + unavailable) AS total
@@ -725,7 +771,7 @@ class Store:
                     )
                     if cursor.rowcount != 1:
                         raise AccessError("El registro no pertenece al centro seleccionado o ya no existe.")
-            except sqlite3.IntegrityError as error:
+            except INTEGRITY_ERRORS as error:
                 raise InventoryError("Ya existe ese tipo, nombre o código en el centro.") from error
             connection.execute("UPDATE centers SET changed_at=? WHERE id=?", (now, center_id))
 
@@ -1081,7 +1127,7 @@ class Store:
             self._actor(connection, token, admin=True)
             try:
                 connection.execute("INSERT INTO equipment_types(kind) VALUES(?)", (kind,))
-            except sqlite3.IntegrityError as error:
+            except INTEGRITY_ERRORS as error:
                 raise InventoryError("Ese tipo de equipo ya está en la lista.") from error
 
     def remove_equipment_type(self, token: str, kind: str) -> None:
@@ -1139,7 +1185,7 @@ class Store:
                     )
                     if cursor.rowcount != 1:
                         raise AccessError("El registro no pertenece al centro seleccionado o ya no existe.")
-            except sqlite3.IntegrityError as error:
+            except INTEGRITY_ERRORS as error:
                 raise InventoryError("Ya existe ese código en el centro.") from error
             connection.execute("UPDATE centers SET changed_at=? WHERE id=?", (now, center_id))
 
@@ -1157,7 +1203,7 @@ def main():
             parser.exit(1, "Las contraseñas no coinciden.\n")
         try:
             Store().bootstrap(username, password)
-        except (InventoryError, sqlite3.Error, OSError) as error:
+        except (InventoryError, *DATABASE_ERRORS, OSError) as error:
             parser.exit(1, f"No se pudo crear la cuenta: {error}\n")
         print("Cuenta administradora creada. Ya puedes iniciar sesión.")
     if args.command == "import-catalog":
@@ -1165,7 +1211,7 @@ def main():
             store = Store()
             with store.transaction() as connection:
                 added = store._import_centers(connection, load_center_catalog())
-        except (InventoryError, sqlite3.Error, OSError) as error:
+        except (InventoryError, *DATABASE_ERRORS, OSError) as error:
             parser.exit(1, f"No se pudo importar el catálogo: {error}\n")
         print(f"Catálogo importado: {added} centros nuevos. Los centros existentes se conservaron.")
 
