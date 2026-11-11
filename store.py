@@ -719,35 +719,29 @@ class Store:
                 centers = connection.execute(
                     f"SELECT {REPORT_COLUMNS} FROM centers WHERE id=?", (center_id,),
                 ).fetchall()
-            return [
-                (dict(center), {
-                    **{
-                        table: [dict(row) for row in connection.execute(
-                            (
-                                "SELECT * FROM facilities WHERE center_id=? AND id NOT IN "
-                                "(SELECT facility_id FROM migrated_facilities) ORDER BY id"
-                                if table == "facilities"
-                                else f"SELECT * FROM {table} WHERE center_id=? ORDER BY id"
-                            ),
-                            (center["id"],),
-                        )]
-                        for table in ("quantities", "facilities", "equipment")
-                    },
-                    "facility_counts": [dict(row) for row in connection.execute(
-                        "SELECT * FROM facility_counts WHERE center_id=? ORDER BY id", (center["id"],),
-                    )],
-                    "special_laboratories": [dict(row) for row in connection.execute(
-                        "SELECT * FROM special_laboratories WHERE center_id=? ORDER BY slot", (center["id"],),
-                    )],
-                    "equipment_counts": [dict(row) for row in connection.execute(
-                        "SELECT * FROM equipment_counts WHERE center_id=? ORDER BY id", (center["id"],),
-                    )],
-                    "plant_counts": [dict(row) for row in connection.execute(
-                        "SELECT * FROM plant_counts WHERE center_id=? ORDER BY id", (center["id"],),
-                    )],
-                })
-                for center in centers
-            ]
+            tables = (
+                "quantities", "facilities", "equipment", "facility_counts",
+                "special_laboratories", "equipment_counts", "plant_counts",
+            )
+            inventories = {
+                center["id"]: {table: [] for table in tables} for center in centers
+            }
+            if inventories:
+                for table in tables:
+                    conditions = []
+                    parameters = ()
+                    if center_id is not None:
+                        conditions.append("center_id=?")
+                        parameters = (center_id,)
+                    if table == "facilities":
+                        conditions.append("id NOT IN (SELECT facility_id FROM migrated_facilities)")
+                    where = " WHERE " + " AND ".join(conditions) if conditions else ""
+                    order = "slot" if table == "special_laboratories" else "id"
+                    for row in connection.execute(
+                        f"SELECT * FROM {table}{where} ORDER BY {order}", parameters,
+                    ):
+                        inventories[row["center_id"]][table].append(dict(row))
+            return [(dict(center), inventories[center["id"]]) for center in centers]
 
     def _save(self, token, center_id, table, fields, record_id):
         with self.transaction() as connection:

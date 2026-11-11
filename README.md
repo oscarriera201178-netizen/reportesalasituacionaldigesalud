@@ -423,6 +423,9 @@ sin políticas públicas; usa la cuenta PostgreSQL propietaria para esta aplicac
 y no añadas políticas que expongan usuarios, sesiones o inventarios a la API.
 El almacenamiento mantiene transacciones serializadas para conservar los
 controles de permisos y carga semanal existentes.
+Los informes consultan cada tabla de inventario una sola vez por lectura,
+en lugar de repetir siete consultas por centro: para 34 centros pasan de
+238 a 7 consultas de inventario, conservando el orden y los permisos.
 
 #### 4. Respaldos independientes y pruebas
 

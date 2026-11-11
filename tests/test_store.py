@@ -5,6 +5,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
+from database import SQLiteConnection
 
 from store import (
     AMBULANCE_TYPES, BED_TYPES, AccessError, IDLE_SECONDS, InventoryError, REPORT_LOADED, REPORT_PENDING,
@@ -36,6 +37,41 @@ class StoreTests(unittest.TestCase):
         self.center = self.store.login("norte", TEMPORARY)
         self.store.change_password(self.center, TEMPORARY, CHANGED)
         self.center = self.store.login("norte", CHANGED)
+
+    def test_report_snapshot_batches_tables_for_all_34_centers(self):
+        with self.store.transaction() as connection:
+            connection.executemany(
+                "INSERT INTO centers(name) VALUES(?)",
+                [(f"Centro adicional {number:02}",) for number in range(32)],
+            )
+        self.store.initialize_empty_items(self.center, self.north)
+        expected_inventory = self.store.inventory(self.center, self.north)
+        statements = []
+        execute = SQLiteConnection.execute
+
+        def traced_execute(connection, statement, *args):
+            statements.append(statement)
+            return execute(connection, statement, *args)
+
+        with patch.object(SQLiteConnection, "execute", traced_execute):
+            snapshot = self.store.report_snapshot(self.admin)
+        self.assertEqual(len(snapshot), 34)
+        table_reads = [
+            statement for statement in statements
+            if statement.strip().startswith("SELECT * FROM ")
+        ]
+        self.assertEqual(len(table_reads), 7)
+        north = next(inventory for center, inventory in snapshot if center["id"] == self.north)
+        for table, rows in north.items():
+            self.assertEqual(rows, expected_inventory[table])
+        self.assertTrue(all(not rows for center, inventory in snapshot if center["id"] != self.north for rows in inventory.values()))
+        self.assertEqual(self.store.report_snapshot(self.center, self.north), [
+            (next(center for center, _ in snapshot if center["id"] == self.north), north),
+        ])
+        with self.assertRaises(AccessError):
+            self.store.report_snapshot(self.center)
+        with self.assertRaises(AccessError):
+            self.store.report_snapshot(self.center, self.south)
 
     def test_zero_defaults_require_every_section_to_be_loaded_before_submitting(self):
         self.store.initialize_empty_items(self.center, self.north)
