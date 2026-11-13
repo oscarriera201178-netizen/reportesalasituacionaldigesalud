@@ -162,6 +162,8 @@ mostrar el texto completo.
   pero las siete secciones deben cargarse nuevamente para enviar esa semana,
   incluidas las que continúan vacías en 00.
   Cada centro puede enviar una sola vez por semana.
+  Los formularios de carga, edición y envío usan una ruta fija sin acentos ni
+  espacios; el ítem se envía en el formulario y se valida en el servidor.
 - **QUIRÓFANOS** muestra **Quirófano en piso** y **Quirófano en emergencia**,
   con títulos verdes, selección **Sí / No** y, cuando hay, las **cantidades
   operativas y fuera de servicio** de cada uno. Se exige completar ambos para

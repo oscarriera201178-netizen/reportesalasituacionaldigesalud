@@ -3,6 +3,7 @@ import tempfile
 import tomllib
 import unittest
 import os
+from html import unescape
 from pathlib import Path
 from unittest.mock import patch
 
@@ -135,7 +136,17 @@ class HtmlApplicationTests(unittest.TestCase):
                     f"/inventory/{self.center['id']}?section={section}",
                 )
                 self.assertEqual(page.status_code, 200)
-                payload = {"csrf_token": csrf, "action": "load", **fields}
+                form = re.search(
+                    rb'<form[^>]*action="([^"]+)"[^>]*id="inventory-form"[^>]*>(.*?)</form>',
+                    page.data, re.S,
+                )
+                self.assertIsNotNone(form)
+                load_url = unescape(form.group(1).decode())
+                self.assertEqual(load_url, f"/inventory/{self.center['id']}/save")
+                section_field = re.search(rb'name="section" value="([^"]+)"', form.group(2))
+                self.assertIsNotNone(section_field)
+                self.assertEqual(unescape(section_field.group(1).decode()), section)
+                payload = {"csrf_token": csrf, "action": "load", "section": section, **fields}
                 if section == "Camas":
                     kinds = list(BED_TYPES)
                 elif section == "Vehículos":
@@ -160,14 +171,47 @@ class HtmlApplicationTests(unittest.TestCase):
                     for index in range(len(kinds)):
                         payload[f"qty_{index}_operational"] = "0"
                         payload[f"qty_{index}_unavailable"] = "0"
-                response = self.client.post(
-                    f"/inventory/{self.center['id']}/{section}", data=payload,
-                )
-                self.assertEqual(response.status_code, 302)
-        self.client.post(
-            f"/inventory/{self.center['id']}/Camas",
-            data={"csrf_token": csrf, "action": "submit"},
+                for attempt in range(2):
+                    response = self.client.post(load_url, data=payload, follow_redirects=True)
+                    self.assertEqual(response.status_code, 200)
+                    self.assertTrue(self.store.section_loads(token, self.center["id"])[section])
+                    edit_form = next(
+                        (action, body) for action, body in re.findall(
+                            rb'<form[^>]*action="([^"]+)"[^>]*>(.*?)</form>',
+                            response.data, re.S,
+                        ) if b'name="action" value="edit"' in body
+                    )
+                    edit_url = unescape(edit_form[0].decode())
+                    self.assertEqual(edit_url, load_url)
+                    edit_section = re.search(
+                        rb'name="section" value="([^"]+)"', edit_form[1],
+                    )
+                    self.assertIsNotNone(edit_section)
+                    self.assertEqual(unescape(edit_section.group(1).decode()), section)
+                    if attempt == 0:
+                        edited = self.client.post(edit_url, data={
+                            "csrf_token": csrf, "action": "edit", "section": section,
+                        }, follow_redirects=True)
+                        self.assertEqual(edited.status_code, 200)
+                        self.assertFalse(self.store.section_loads(token, self.center["id"])[section])
+                        self.assertIn(b'id="inventory-form"', edited.data)
+        submit_form = next(
+            (action, body) for action, body in re.findall(
+                rb'<form[^>]*action="([^"]+)"[^>]*>(.*?)</form>',
+                response.data, re.S,
+            ) if b'name="action" value="submit"' in body
         )
+        submit_section = re.search(rb'name="section" value="([^"]+)"', submit_form[1])
+        self.assertIsNotNone(submit_section)
+        submitted = self.client.post(
+            unescape(submit_form[0].decode()),
+            data={
+                "csrf_token": csrf, "action": "submit",
+                "section": unescape(submit_section.group(1).decode()),
+            },
+            follow_redirects=True,
+        )
+        self.assertEqual(submitted.status_code, 200)
         self.assertTrue(self.store.submission(token, self.center["id"])["loaded"])
 
     def test_admin_can_view_report_accounts_and_download_pdf(self):

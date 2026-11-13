@@ -613,10 +613,13 @@ def create_app(store=None, *, secret_key=None):
         } for kind in kinds]
 
     @app.post("/inventory/<int:center_id>/<section>")
-    def save_inventory(center_id, section):
+    @app.post("/inventory/<int:center_id>/save")
+    def save_inventory(center_id, section=None):
         current = require_role("center")
         if not isinstance(current, dict):
             return current or redirect(url_for("login"))
+        if section is None:
+            section = request.form.get("section", "")
         if section not in REPORT_SECTIONS:
             abort(404)
         store_obj = get_store()

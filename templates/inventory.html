@@ -9,8 +9,9 @@
 </nav>
 {% if loaded and status.editable %}
   <div class="notice notice-success">Sección cargada y bloqueada hasta el envío final. Puedes editarla para corregirla.</div>
-  <form method="post" action="{{ url_for('save_inventory', center_id=center.id, section=category) }}">
+  <form method="post" action="{{ url_for('save_inventory', center_id=center.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="section" value="{{ category }}">
     <input type="hidden" name="action" value="edit">
     <button class="button button-muted" type="submit">Editar sección</button>
   </form>
@@ -36,8 +37,9 @@
   {% endif %}
   {% if rows or presence_items %}
     <p>Indica las cantidades de cada tipo. Si no tienes unidades, deja 00.</p>
-    <form method="post" action="{{ url_for('save_inventory', center_id=center.id, section=category) }}" class="inventory-form" id="inventory-form">
+    <form method="post" action="{{ url_for('save_inventory', center_id=center.id) }}" class="inventory-form" id="inventory-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="section" value="{{ category }}">
       <input type="hidden" name="action" value="load">
       {% if category == "Vehículos" %}
         {% for group, kinds in vehicle_groups.items() %}
@@ -142,8 +144,9 @@
       <p>Para enviar, completa y carga cada sección:</p>
       <ul>{% for item in missing %}<li>{{ item }}</li>{% endfor %}</ul>
     {% elif status.editable %}
-      <form method="post" action="{{ url_for('save_inventory', center_id=center.id, section=category) }}">
+      <form method="post" action="{{ url_for('save_inventory', center_id=center.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="section" value="{{ category }}">
         <input type="hidden" name="action" value="submit">
         <button class="button button-primary" type="submit" onclick="return confirm('¿Confirmas el envío del inventario semanal a DIGESALUD-MPPD?')">Enviar a DIGESALUD-MPPD</button>
       </form>
