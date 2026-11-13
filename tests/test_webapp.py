@@ -573,6 +573,58 @@ class HtmlApplicationTests(unittest.TestCase):
         self.assertEqual(pdf.mimetype, "application/pdf")
         self.assertEqual(self.client.get("/admin/accounts").status_code, 200)
 
+    def test_admin_edits_accounts_and_confirms_deletion_of_center40(self):
+        self.store.create_center(self.admin_token, "Centro Cuarenta", "Prueba", "centro40", CENTER_PASSWORD)
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        self.login("admin", ADMIN_PASSWORD)
+        csrf = self.authenticated_csrf()
+        users = self.store.users(self.admin_token)
+        center = next(user for user in users if user["username"] == "centro40")
+        military = next(user for user in users if user["username"] == "guardia")
+        page = self.client.get("/admin/accounts")
+        self.assertIn(f'href="/admin/accounts/{center["id"]}/delete"'.encode(), page.data)
+        self.assertIn(b'name="component"', page.data)
+        response = self.client.post("/admin/accounts", data={
+            "csrf_token": csrf, "action": "update", "user_id": military["id"],
+            "username": "guardia2", "component": "Armada Bolivariana",
+        })
+        self.assertEqual(response.status_code, 302)
+        identity = self.store.identity(self.store.login("guardia2", CENTER_PASSWORD))
+        self.assertEqual(identity["center_name"], "Armada Bolivariana")
+        token = self.store.login("centro40", CENTER_PASSWORD)
+        self.store.save_quantity(token, center["center_id"], "Camas", "UCI", 1, 0)
+        path = f'/admin/accounts/{center["id"]}/delete'
+        page = self.client.get(path)
+        self.assertIn(b"centro40", page.data)
+        self.assertIn("no se puede deshacer".encode(), page.data)
+        self.assertEqual(self.client.post(path, data={"confirmation": "centro40"}).status_code, 400)
+        self.assertEqual(self.client.post(path, data={
+            "csrf_token": csrf, "confirmation": "otro", "center_id": center["center_id"],
+        }).status_code, 303)
+        self.assertEqual(self.store.identity(token)["username"], "centro40")
+        self.assertEqual(self.client.post(path, data={
+            "csrf_token": csrf, "confirmation": "centro40", "center_id": self.center["id"],
+        }).status_code, 303)
+        self.assertEqual(self.store.identity(token)["username"], "centro40")
+        response = self.client.post(path, data={
+            "csrf_token": csrf, "confirmation": "centro40", "center_id": center["center_id"],
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/admin/accounts")
+        self.assertNotIn("centro40", [user["username"] for user in self.store.users(self.admin_token)])
+        self.assertNotIn(center["center_id"], [item["id"] for item in self.store.centers(self.admin_token)])
+        with self.assertRaises(AccessError):
+            self.store.identity(token)
+        self.assertEqual(self.client.get(path).status_code, 404)
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = self.store.login("norte", CENTER_PASSWORD)
+        self.assertEqual(self.client.get(f'/admin/accounts/{military["id"]}/delete').status_code, 403)
+        self.assertEqual(self.client.post(f'/admin/accounts/{military["id"]}/delete', data={
+            "csrf_token": csrf, "confirmation": "guardia2",
+        }).status_code, 403)
+
     def test_admin_can_create_center_account_and_update_account_state(self):
         self.login("admin", ADMIN_PASSWORD)
         csrf = self.authenticated_csrf()

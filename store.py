@@ -688,6 +688,22 @@ class Store:
         username = _username(username)
         with self.transaction() as connection:
             self._actor(connection, token, admin=True)
+            existing = connection.execute(
+                "SELECT id,account_type FROM centers WHERE name=?", (component,),
+            ).fetchone()
+            if existing:
+                if existing["account_type"] != "military" or connection.execute(
+                    "SELECT 1 FROM users WHERE center_id=?", (existing["id"],),
+                ).fetchone():
+                    raise InventoryError("Ese componente militar ya tiene cuenta o ya está registrado.")
+                try:
+                    connection.execute(
+                        "UPDATE centers SET assigned_username=? WHERE id=?", (username, existing["id"]),
+                    )
+                except INTEGRITY_ERRORS as error:
+                    raise InventoryError("Ese usuario ya está asignado a otra institución.") from error
+                self._create_user(connection, username, password, "center", existing["id"])
+                return
             try:
                 center_id = connection.insert_id(
                     "INSERT INTO centers(name,assigned_username,account_type) "
@@ -697,6 +713,73 @@ class Store:
             except INTEGRITY_ERRORS as error:
                 raise InventoryError("Ese componente militar ya tiene cuenta o ya está registrado.") from error
             self._create_user(connection, username, password, "center", center_id)
+
+    def update_military_account(self, token: str, user_id: int, component: str, username: str) -> None:
+        if component not in MILITARY_COMPONENTS:
+            raise InventoryError("Selecciona un componente militar válido.")
+        username = _username(username)
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            user = connection.execute(
+                "SELECT u.id,u.username,u.center_id FROM users u "
+                "JOIN centers c ON c.id=u.center_id "
+                "WHERE u.id=? AND u.role='center' AND c.account_type='military'", (user_id,),
+            ).fetchone()
+            if not user:
+                raise InventoryError("Selecciona una cuenta militar válida.")
+            if connection.execute(
+                "SELECT 1 FROM users WHERE username=? AND id!=?", (username, user_id),
+            ).fetchone():
+                raise InventoryError("Ese usuario ya pertenece a otra cuenta.")
+            destination = connection.execute(
+                "SELECT id,account_type FROM centers WHERE name=?", (component,),
+            ).fetchone()
+            if destination and (
+                destination["account_type"] != "military" or connection.execute(
+                    "SELECT 1 FROM users WHERE center_id=? AND id!=?", (destination["id"], user_id),
+                ).fetchone()
+            ):
+                raise InventoryError("Ese componente ya tiene una cuenta o pertenece a un centro de salud.")
+            try:
+                destination_id = destination["id"] if destination else connection.insert_id(
+                    "INSERT INTO centers(name,account_type) VALUES(?,'military')", (component,),
+                )
+                if destination_id != user["center_id"]:
+                    connection.execute("UPDATE centers SET assigned_username='' WHERE id=?", (user["center_id"],))
+                connection.execute(
+                    "UPDATE centers SET assigned_username=? WHERE id=?", (username, destination_id),
+                )
+                connection.execute(
+                    "UPDATE users SET username=?,center_id=? WHERE id=?", (username, destination_id, user_id),
+                )
+                if destination_id != user["center_id"] or user["username"] != username:
+                    connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+            except INTEGRITY_ERRORS as error:
+                raise InventoryError("El usuario o componente ya está asignado a otra cuenta.") from error
+
+    def delete_institution_account(
+        self, token: str, user_id: int, *, center_id: int, username: str,
+    ) -> None:
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            user = connection.execute(
+                "SELECT center_id,username FROM users WHERE id=? AND role='center'", (user_id,),
+            ).fetchone()
+            if not user or user["center_id"] != center_id or user["username"] != username:
+                raise InventoryError("La cuenta cambió o ya no existe; revisa la selección antes de eliminar.")
+            connection.execute(
+                "DELETE FROM migrated_facilities WHERE facility_id IN "
+                "(SELECT id FROM facilities WHERE center_id=?)", (center_id,),
+            )
+            for table in (
+                "quantities", "facilities", "facility_counts", "section_loads",
+                "vehicle_history", "special_laboratories", "equipment_counts",
+                "plant_counts", "equipment", "military_records", "traffic_records",
+            ):
+                connection.execute(f"DELETE FROM {table} WHERE center_id=?", (center_id,))
+            connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
+            connection.execute("DELETE FROM users WHERE id=?", (user_id,))
+            connection.execute("DELETE FROM centers WHERE id=?", (center_id,))
 
     def create_account(self, token: str, center_id: int, username: str, password: str) -> None:
         username = _username(username)

@@ -354,6 +354,12 @@ consolidados.
 
 Cada centro accede a su inventario con la clave asignada por el administrador;
 solo el administrador puede cambiarla desde **Cuentas de centros**.
+Administración puede editar los datos de las cuentas de centros y componentes,
+incluido el componente asignado. Al cambiarlo, los registros anteriores permanecen
+en el componente original; se puede crear otra cuenta para consultarlos. También
+puede eliminar una cuenta junto con su institución, inventario y registros propios:
+debe escribir el usuario en la pantalla de confirmación. La eliminación es
+definitiva y no borra registros ingresados por otras instituciones.
 Las sesiones vencen tras 30 minutos sin actividad o un máximo de ocho horas.
 Tras cinco intentos fallidos se bloquea la cuenta durante 15 minutos.
 Cerrar sesión, cambiar/restablecer la contraseña o desactivar una cuenta revoca

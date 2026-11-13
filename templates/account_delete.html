@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Eliminar cuenta · DIGESALUD-MPPD{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>Eliminar cuenta e institución</h1>
+  <p>Se eliminarán definitivamente la cuenta <strong>{{ user.username }}</strong> y la institución <strong>{{ user.center }}</strong>, incluidos su inventario y los registros ingresados por ella. Esta acción no se puede deshacer.</p>
+  <p>Los registros ingresados por otras instituciones no se eliminan.</p>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="center_id" value="{{ user.center_id }}">
+    <label>Escribe el usuario <strong>{{ user.username }}</strong> para confirmar<input name="confirmation" required autocomplete="off"></label>
+    <button class="button button-danger" type="submit">Eliminar definitivamente</button>
+    <a class="button button-muted" href="{{ url_for('accounts') }}">Cancelar</a>
+  </form>
+</section>
+{% endblock %}

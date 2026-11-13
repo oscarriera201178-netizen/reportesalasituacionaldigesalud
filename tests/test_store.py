@@ -908,6 +908,112 @@ class StoreTests(unittest.TestCase):
             self.assertEqual(sum(pool.map(create, range(2))), 2)
         self.assertEqual(len(self.store.centers(self.admin)), 38)
 
+    def test_component_account_reassignment_keeps_records_with_original_institution(self):
+        self.store.create_military_account(
+            self.admin, "Guardia Nacional Bolivariana", "guardia", TEMPORARY,
+        )
+        guard = self.store.login("guardia", TEMPORARY)
+        self.store.add_military_record(
+            guard, "TTE", "PACIENTE PRUEBA", "V-1", "2000-01-01",
+            "2026-01-01", "Muerte natural", "REDI Capital", "ZODI", "UNIDAD",
+        )
+        user = next(user for user in self.store.users(self.admin) if user["username"] == "guardia")
+        with self.assertRaises(AccessError):
+            self.store.update_military_account(guard, user["id"], "Armada Bolivariana", "nueva")
+        self.store.update_military_account(self.admin, user["id"], "Armada Bolivariana", "nueva")
+        with self.assertRaises(AccessError):
+            self.store.identity(guard)
+        new_token = self.store.login("nueva", TEMPORARY)
+        self.assertEqual(self.store.traffic_records(new_token, account_type="military"), [])
+        self.assertEqual(self.store.military_records(new_token), [])
+        self.assertEqual(self.store.military_records(self.admin)[0]["component"], "Guardia Nacional Bolivariana")
+        self.store.create_military_account(
+            self.admin, "Guardia Nacional Bolivariana", "guardia2", TEMPORARY,
+        )
+        original = self.store.login("guardia2", TEMPORARY)
+        self.assertEqual(len(self.store.military_records(original)), 1)
+        with self.assertRaises(InventoryError):
+            self.store.update_military_account(self.admin, user["id"], "Guardia Nacional Bolivariana", "nueva")
+        self.assertEqual(self.store.identity(new_token)["center_name"], "Armada Bolivariana")
+        with self.assertRaises(InventoryError):
+            self.store.update_military_account(self.admin, user["id"], "Armada Bolivariana", "sur")
+        self.assertEqual(self.store.identity(new_token)["center_name"], "Armada Bolivariana")
+
+    def test_delete_institution_removes_only_its_account_and_owned_data(self):
+        self.store.save_quantity(self.center, self.north, "Camas", "UCI", 4, 1)
+        self.store.add_military_record(
+            self.center, "TTE", "PACIENTE NORTE", "V-1", "2000-01-01",
+            "2026-01-01", "Muerte natural", "REDI Capital", "ZODI", "UNIDAD",
+            component="Armada Bolivariana",
+        )
+        self.store.add_traffic_record(
+            self.center, grade="TTE", full_name="PACIENTE NORTE", cedula="V-1",
+            birth_date="2000-01-01", attention_date="2026-01-01", accident_type="Moto",
+            patient_condition="Heridas leves", traffic_role="Conductor", redi="REDI Capital",
+            zodi="ZODI", unit="UNIDAD", component="Armada Bolivariana",
+        )
+        with self.store.transaction() as connection:
+            facility = connection.insert_id(
+                "INSERT INTO facilities(center_id,category,name,kind,state) VALUES(?,?,?,?,?)",
+                (self.north, "Laboratorio", "PRUEBA", "Laboratorio", "Operativo"),
+            )
+            connection.execute("INSERT INTO migrated_facilities(facility_id) VALUES(?)", (facility,))
+        user = next(user for user in self.store.users(self.admin) if user["center_id"] == self.north)
+        with self.assertRaises(AccessError):
+            self.store.delete_institution_account(
+                self.center, user["id"], center_id=self.north, username=user["username"],
+            )
+        with self.assertRaises(InventoryError):
+            self.store.delete_institution_account(
+                self.admin, user["id"], center_id=self.south, username=user["username"],
+            )
+        self.store.delete_institution_account(
+            self.admin, user["id"], center_id=self.north, username=user["username"],
+        )
+        with self.assertRaises(AccessError):
+            self.store.identity(self.center)
+        with self.assertRaises(AccessError):
+            self.store.login("norte", CHANGED)
+        self.assertEqual([center["id"] for center in self.store.centers(self.admin)], [self.south])
+        self.assertEqual(self.store.military_records(self.admin, account_type="health"), [])
+        self.assertEqual(self.store.traffic_records(self.admin), [])
+        with self.store.connect() as connection:
+            self.assertIsNone(connection.execute(
+                "SELECT 1 FROM migrated_facilities WHERE facility_id=?", (facility,),
+            ).fetchone())
+        self.assertEqual(self.store.identity(self.admin)["role"], "admin")
+        with self.assertRaises(InventoryError):
+            self.store.delete_institution_account(self.admin, 99999, center_id=self.south, username="sur")
+
+    def test_deleting_component_does_not_remove_other_institution_records(self):
+        self.store.create_military_account(
+            self.admin, "Guardia Nacional Bolivariana", "guardia", TEMPORARY,
+        )
+        guard = self.store.login("guardia", TEMPORARY)
+        for owner, name, component in (
+            (guard, "PACIENTE COMPONENTE", None),
+            (self.center, "PACIENTE CENTRO", "Guardia Nacional Bolivariana"),
+        ):
+            self.store.add_military_record(
+                owner, "TTE", name, "V-1", "2000-01-01", "2026-01-01",
+                "Muerte natural", "REDI Capital", "ZODI", "UNIDAD", component=component,
+            )
+        user = next(user for user in self.store.users(self.admin) if user["username"] == "guardia")
+        self.store.delete_institution_account(
+            self.admin, user["id"], center_id=user["center_id"], username="guardia",
+        )
+        self.assertEqual(self.store.military_records(self.admin), [])
+        self.assertEqual(
+            self.store.military_records(self.admin, account_type="health")[0]["full_name"],
+            "PACIENTE CENTRO",
+        )
+        with self.assertRaises(AccessError):
+            self.store.identity(guard)
+        self.store.create_military_account(
+            self.admin, "Guardia Nacional Bolivariana", "guardia", TEMPORARY,
+        )
+        self.assertEqual(self.store.military_records(self.store.login("guardia", TEMPORARY)), [])
+
     def test_admin_can_edit_center_without_losing_inventory_or_weekly_status(self):
         self.store.save_quantity(self.center, self.north, "Camas", "UCI", 4, 1)
         self.store.submit(self.center, self.north)

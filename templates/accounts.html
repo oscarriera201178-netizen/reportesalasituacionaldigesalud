@@ -59,6 +59,20 @@
           <label>Usuario<input name="username" value="{{ user.username }}" required minlength="3" maxlength="80"></label>
           <button class="button button-muted" type="submit">Guardar datos</button>
         </form>
+      {% else %}
+        <form method="post" class="form-grid account-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="update"><input type="hidden" name="user_id" value="{{ user.id }}">
+          <label>Componente<select name="component" required>
+            {% for component in military_components %}
+              {% if component == user.center or component not in accounted_components %}
+                <option value="{{ component }}" {% if component == user.center %}selected{% endif %}>{{ component }}</option>
+              {% endif %}
+            {% endfor %}
+          </select></label>
+          <label>Usuario<input name="username" value="{{ user.username }}" required minlength="3" maxlength="40"></label>
+          <p>Al cambiar de componente, los registros anteriores permanecen en el componente original.</p>
+          <button class="button button-muted" type="submit">Guardar datos</button>
+        </form>
       {% endif %}
       <form method="post" class="form-grid account-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="password"><input type="hidden" name="user_id" value="{{ user.id }}">
@@ -66,6 +80,7 @@
         <label>Confirmar contraseña<input name="confirmation" type="password" minlength="12" maxlength="128" required></label>
         <button class="button button-muted" type="submit">Cambiar contraseña</button>
       </form>
+      <a class="button button-danger" href="{{ url_for('delete_account', user_id=user.id) }}">Eliminar cuenta e institución</a>
       <form method="post" class="inline-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="toggle"><input type="hidden" name="user_id" value="{{ user.id }}">
         <input type="hidden" name="active" value="{{ 0 if user.active else 1 }}">

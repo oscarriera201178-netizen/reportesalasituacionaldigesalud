@@ -311,6 +311,8 @@ def create_app(store=None, *, secret_key=None):
         }
         return render_template(
             "accounts.html", users=users, available_centers=available_centers,
+            military_components=MILITARY_COMPONENTS,
+            accounted_components=accounted_components,
             available_components=[
                 component for component in MILITARY_COMPONENTS
                 if component not in accounted_components
@@ -363,11 +365,15 @@ def create_app(store=None, *, secret_key=None):
                 abort(404)
             if action == "update":
                 if user["account_type"] == "military":
-                    abort(403)
-                store_obj.update_center(
-                    token(), user["center_id"], request.form.get("name", ""),
-                    request.form.get("location", ""), request.form.get("username", ""),
-                )
+                    store_obj.update_military_account(
+                        token(), user_id, request.form.get("component", ""),
+                        request.form.get("username", ""),
+                    )
+                else:
+                    store_obj.update_center(
+                        token(), user["center_id"], request.form.get("name", ""),
+                        request.form.get("location", ""), request.form.get("username", ""),
+                    )
                 flash("Datos de la cuenta actualizados.", "success")
             elif action == "password":
                 password = request.form.get("password", "")
@@ -382,6 +388,26 @@ def create_app(store=None, *, secret_key=None):
         else:
             abort(400, "Acción no válida.")
         return redirect(url_for("accounts"))
+
+    @app.route("/admin/accounts/<int:user_id>/delete", methods=("GET", "POST"))
+    @admin_required
+    def delete_account(user_id):
+        user = next((user for user in get_store().users(token()) if user["id"] == user_id), None)
+        if user is None:
+            abort(404)
+        if request.method == "POST":
+            try:
+                center_id = int(request.form.get("center_id", ""))
+            except ValueError as error:
+                raise InventoryError("La institución seleccionada no es válida.") from error
+            if request.form.get("confirmation", "").strip() != user["username"]:
+                raise InventoryError("Escribe el nombre de usuario exacto para confirmar la eliminación.")
+            get_store().delete_institution_account(
+                token(), user_id, center_id=center_id, username=user["username"],
+            )
+            flash("Cuenta, institución y sus registros eliminados definitivamente.", "success")
+            return redirect(url_for("accounts"))
+        return render_template("account_delete.html", user=user)
 
     @app.get("/admin/military")
     @admin_required
