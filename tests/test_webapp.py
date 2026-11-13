@@ -69,6 +69,7 @@ class HtmlApplicationTests(unittest.TestCase):
         response = self.client.get("/login")
         html = response.data.decode()
         self.assertEqual(response.status_code, 200)
+        self.assertIn("<h1>Iniciar sesión</h1>", html)
         self.assertIn('src="/escudo.png"', html)
         self.assertLess(html.index('class="login-shield"'), html.index('class="login-card"'))
 
