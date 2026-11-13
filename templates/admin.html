@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Informes · DIGESALUD-MPPD{% endblock %}
+{% block content %}
+<div class="admin-nav">
+  <a class="button button-primary" href="{{ url_for('home') }}">Informes</a>
+  <a class="button button-muted" href="{{ url_for('accounts') }}">Cuentas de centros</a>
+</div>
+<section class="panel">
+  <h1>Resumen de los centros de salud</h1>
+  <p class="period">Esta semana — Semana {{ period_week }} ({{ period_start }} al {{ period_end }})</p>
+  <p class="report-count">Centros de Salud que Han Reportado: {{ reported }}/{{ summary|length }} · Faltan: {{ summary|length - reported }}</p>
+</section>
+<section class="panel">
+  <h2>Consultar inventario</h2>
+  <form method="get" class="filter-grid">
+    <label>Ítem
+      <select name="category" onchange="this.form.submit()">
+        {% for key, label in categories.items() %}
+          <option value="{{ key }}" {% if category == key %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Centro de salud
+      <select name="center" onchange="this.form.submit()">
+        <option value="all" {% if center_id == "all" %}selected{% endif %}>Todos los centros</option>
+        {% for center in centers %}
+          <option value="{{ center.id }}" {% if center_id|string == center.id|string %}selected{% endif %}>{{ center.id }}. {{ center.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    {% if report_category == "Todos los vehículos" %}
+      <label>Grupo de vehículos
+        <select name="group" onchange="this.form.submit()">
+          <option value="">Todos los grupos</option>
+          {% for group in vehicle_groups %}
+            <option value="{{ group }}" {% if vehicle_group == group %}selected{% endif %}>{{ group }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endif %}
+    <label>Tipo
+      <select name="kind" onchange="this.form.submit()">
+        <option value="">Todos los tipos</option>
+        {% for option in options %}
+          <option value="{{ option }}" {% if kind == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>{% for key in rows[0] %}<th>{{ key }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for row in rows %}<tr class="{% if row.Tipo == 'TOTAL' %}total-row{% endif %}">{% for value in row.values() %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  <a class="button button-primary" href="{{ url_for('download_report', category=category, center=center_id, group=vehicle_group or '', kind=kind or '') }}">Generar reporte PDF</a>
+</section>
+<section class="panel">
+  <h2>Estado semanal</h2>
+  {% if summary %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>N.º</th><th>Centro</th><th>Estado</th><th>Camas</th><th>Vehículos</th><th>Bancos</th><th>Laboratorios</th><th>Quirófanos</th><th>Equipos</th><th>Plantas eléctricas</th></tr></thead>
+      <tbody>{% for row in summary %}<tr><td>{{ row["N°"] }}</td><td>{{ row.Centro }}</td><td>{{ row.Estado }}</td><td>{{ row.Camas }}</td><td>{{ row.Vehículos }}</td><td>{{ row["Bancos de sangre"] }}</td><td>{{ row.Laboratorios }}</td><td>{{ row.Quirófanos }}</td><td>{{ row.Equipos }}</td><td>{{ row["Plantas eléctricas"] }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  {% else %}<p>No hay centros registrados.</p>{% endif %}
+</section>
+<details class="panel">
+  <summary>Respaldo privado de datos</summary>
+  <p>Incluye cuentas e inventarios. Guarda la copia en un lugar privado; no la compartas ni la subas al repositorio.</p>
+  <a class="button button-muted" href="{{ url_for('backup') }}">Descargar respaldo SQLite</a>
+</details>
+{% endblock %}

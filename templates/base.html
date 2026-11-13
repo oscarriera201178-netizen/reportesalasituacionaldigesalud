@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}DIGESALUD-MPPD{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('app_css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <img class="institutional-banner" src="{{ url_for('banner') }}" alt="Cintillo institucional">
+    <a class="brand" href="{{ url_for('home') if current_actor else url_for('login') }}">
+      <img src="{{ url_for('shield') }}" alt="Escudo institucional">
+      <span>SALA SITUACIONAL DIGESALUD-MPPD</span>
+    </a>
+    {% if current_actor %}
+      <div class="user-bar">
+        <span>{{ current_actor.username }} · {{ "Administrador" if current_actor.role == "admin" else "Responsable de centro" }}</span>
+        <form method="post" action="{{ url_for('logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+          <button class="button button-muted" type="submit">Cerrar sesión</button>
+        </form>
+      </div>
+    {% endif %}
+  </header>
+  <main class="page">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="notices" aria-live="polite">
+          {% for category, message in messages %}
+            <div class="notice notice-{{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>

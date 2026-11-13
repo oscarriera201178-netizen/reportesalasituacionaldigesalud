@@ -1,0 +1,61 @@
+{% extends "base.html" %}
+{% block title %}Cuentas de centros · DIGESALUD-MPPD{% endblock %}
+{% block content %}
+<div class="admin-nav">
+  <a class="button button-muted" href="{{ url_for('home') }}">Informes</a>
+  <a class="button button-primary" href="{{ url_for('accounts') }}">Cuentas de centros</a>
+</div>
+<section class="panel">
+  <h1>Cuentas de centros</h1>
+  <p>Todos ingresan por el mismo enlace. Cada centro solo accede a su inventario.</p>
+</section>
+{% if available_centers %}
+<details class="panel"><summary>Crear cuenta para un centro registrado</summary>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="create_account">
+    <label>Centro<select name="center_id" required>{% for center in available_centers %}<option value="{{ center.id }}">{{ center.id }}. {{ center.name }}{% if center.location %} — {{ center.location }}{% endif %}</option>{% endfor %}</select></label>
+    <label>Usuario<input name="username" minlength="3" maxlength="40" required></label>
+    <label>Contraseña<input name="password" type="password" minlength="12" maxlength="128" required></label>
+    <label>Confirmar contraseña<input name="confirmation" type="password" minlength="12" maxlength="128" required></label>
+    <button class="button button-primary" type="submit">Crear cuenta</button>
+  </form>
+</details>
+{% endif %}
+<details class="panel"><summary>Crear centro nuevo y cuenta</summary>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="create_center">
+    <label>Nombre del centro<input name="name" maxlength="160" required></label>
+    <label>Ubicación<input name="location" maxlength="160"></label>
+    <label>Usuario<input name="username" minlength="3" maxlength="40" required></label>
+    <label>Contraseña<input name="password" type="password" minlength="12" maxlength="128" required></label>
+    <label>Confirmar contraseña<input name="confirmation" type="password" minlength="12" maxlength="128" required></label>
+    <button class="button button-primary" type="submit">Crear centro y cuenta</button>
+  </form>
+</details>
+<section class="panel">
+  <h2>Cuentas registradas ({{ users|length }})</h2>
+  {% for user in users %}
+    <details class="account-card">
+      <summary>{{ user.center }} · {{ user.username }} · {{ "Activa" if user.active else "Desactivada" }}</summary>
+      <form method="post" class="form-grid account-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="update"><input type="hidden" name="user_id" value="{{ user.id }}">
+        <label>Nombre del centro<input name="name" value="{{ user.center }}" required maxlength="160"></label>
+        <label>Ubicación<input name="location" value="{{ user.location or '' }}" maxlength="160"></label>
+        <label>Usuario<input name="username" value="{{ user.username }}" required minlength="3" maxlength="80"></label>
+        <button class="button button-muted" type="submit">Guardar datos</button>
+      </form>
+      <form method="post" class="form-grid account-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="password"><input type="hidden" name="user_id" value="{{ user.id }}">
+        <label>Nueva contraseña<input name="password" type="password" minlength="12" maxlength="128" required></label>
+        <label>Confirmar contraseña<input name="confirmation" type="password" minlength="12" maxlength="128" required></label>
+        <button class="button button-muted" type="submit">Cambiar contraseña</button>
+      </form>
+      <form method="post" class="inline-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="toggle"><input type="hidden" name="user_id" value="{{ user.id }}">
+        <input type="hidden" name="active" value="{{ 0 if user.active else 1 }}">
+        <button class="button {{ 'button-danger' if user.active else 'button-primary' }}" type="submit">{{ "Desactivar cuenta" if user.active else "Activar cuenta" }}</button>
+      </form>
+    </details>
+  {% else %}<p>No hay cuentas de centros registradas.</p>{% endfor %}
+</section>
+{% endblock %}

@@ -22,8 +22,10 @@ Debajo del título del administrador se muestra la semana del período de report
 enviados/total Faltan: pendientes**. Se cuentan únicamente envíos del período actual y el total
 se obtiene de los centros registrados, inicialmente 34.
 
-Aplicación Streamlit independiente de Residencias, adaptable a móvil y computadora.
-No consulta ni modifica las bases de datos de Residencias.
+Aplicación web HTML adaptable a móvil y computadora, con servidor Flask en
+Python y almacenamiento independiente de Residencias. No consulta ni modifica
+las bases de datos de Residencias. La interfaz principal se ejecuta desde
+`webapp.py`; `app.py` se conserva como versión Streamlit anterior.
 Todos los botones muestran sus títulos en mayúsculas y negrita, incluidos
 categorías, formularios, carga, envío y descargas PDF.
 El botón **CAMAS HOSPITALARIAS** permite varias líneas y ajusta su altura para
@@ -35,14 +37,12 @@ mostrar el texto completo.
 - Una cuenta administradora y una cuenta por centro, sin límite fijo de centros.
   Cada centro tiene un número permanente, visible en los listados y selectores.
 - La administración (DIGESALUD-MPPD) solo consulta y descarga PDF; no realiza
-  cargas. Bajo el título verde centrado **RESUMEN DE LOS CENTROS DE SALUD**
-  aparecen los mismos siete botones de ítems del portal de centros.
-  Cada ítem permite elegir un centro o todos y un tipo o todos los tipos.
+  cargas de inventario. En **Informes**, cada ítem permite elegir un centro o
+  todos y un tipo o todos los tipos.
   Los estados semanales de los centros permanecen visibles y no cambian al
   filtrar el inventario; el contador semanal aparece bajo el título institucional.
-  No muestra el apartado **Administrar centros y cuentas** ni formularios para
-  crear, editar o gestionar cuentas. Los centros, usuarios, inventarios y reportes
-  existentes se conservan; esta retirada solo afecta la pantalla.
+  La sección separada **Cuentas de centros** permite crear y gestionar accesos.
+  Los centros, usuarios, inventarios y reportes existentes se conservan.
 - Las cargas las realiza cada centro de salud, que consulta y actualiza
   únicamente sus registros. Su pantalla muestra el encabezado de sala situacional
   y, a continuación, los botones de categoría para registrar; no hay selector
@@ -187,41 +187,29 @@ Requiere Python 3.11 o posterior.
 ```sh
 cd /workspaces/inventario-centros-salud
 python -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r requirements-dev.txt
 ```
 
-### Desarrollo del inventario sin usuario ni contraseña
+### Ejecutar la aplicación HTML
 
-Para probar el inventario y los centros de ejemplo sin iniciar sesión, usa esta
-opción explícita:
+Para iniciar la interfaz HTML desde la raíz del proyecto:
 
 ```sh
-SALUD_DEVELOPMENT_MODE=1 .venv/bin/python -m streamlit run app.py --server.address=0.0.0.0 --server.port=8503
+.venv/bin/python webapp.py
 ```
 
-Este modo usa una base temporal separada: **todos los registros de prueba se
-pierden al reiniciar el servidor**. No abre ni modifica la base normal, aunque
-ya tenga cuentas. Las cuentas de prueba de los centros del catálogo usan una
-contraseña interna aleatoria y aparecen en **Ver portal como**.
-No muestra formularios de administración de centros ni cuentas. No uses
-información real ni publiques el puerto como servicio de producción. La pantalla
-muestra una advertencia permanente.
-Los centros pueden registrar y enviar datos cualquier día, tanto en modo
-desarrollo como con cuentas, mientras el horario definitivo esté pendiente.
-Se mantiene un único envío por
-centro y semana y el bloqueo de cambios después de enviar.
+La aplicación local escucha en el puerto **8503**. En desarrollo usa una clave de
+sesión temporal generada al arrancar; las sesiones del navegador se invalidan
+al reiniciar. En producción configura `APP_ENV=production`,
+`FLASK_SECRET_KEY` con un valor aleatorio privado y `COOKIE_SECURE=1`, y sirve
+la aplicación detrás de HTTPS con un servidor WSGI. No publiques el servidor
+de desarrollo de Flask en producción.
 
-En la barra lateral, **Ver portal como** permite alternar entre la vista
-**DIGESALUD-MPPD (Administrador)**, que solo consulta y descarga PDF, y la vista
-de cualquier centro de salud, donde aparecen los botones de categoría con sus
-formularios de carga. Las cuentas de centro de este modo solo existen en la base
-temporal.
-
-La caché de desarrollo conserva la ruta temporal, no una instancia del
-almacenamiento. Si modificas métodos de `store.py` con el servidor en marcha,
-reinicia Streamlit para recargar el módulo Python; actualizar solo el navegador
-no garantiza que el servidor importe las nuevas funciones. El reinicio elimina
-el inventario temporal y vuelve a cargar la lista de centros.
+La interfaz HTML conserva inicio y cierre de sesión, cambio obligatorio de
+contraseña, permisos de administrador y centros, formularios de las siete
+secciones, bloqueo y envío semanal, administración de cuentas, informes y
+descarga de PDF. Los cambios se guardan mediante el mismo almacenamiento y las
+mismas validaciones del servidor que utiliza la versión anterior.
 
 ### Centros del PDF
 
@@ -230,18 +218,10 @@ en el PDF. Se conservan los nombres y ubicaciones del documento, sin corregir
 su ortografía. La ubicación se separa del nombre cuando aparece tras ` - `.
 El registro 35 del PDF (MISION MILAGRA DIGESALUD) se eliminó del catálogo.
 
-Al abrir el modo de desarrollo se cargan automáticamente los 34 centros. El
-usuario asignado se muestra al seleccionar cada centro.
 El catálogo no contiene contraseñas y no crea cuentas de acceso de los centros.
-En modo desarrollo, los usuarios se conservan como
-datos de asignación, no como un inicio de sesión activo.
 
-El catálogo permanece en el proyecto y vuelve a cargarse al reiniciar; los
-inventarios de prueba siguen siendo temporales. Al desplegar con los secretos
-`bootstrap_admin` configurados (por ejemplo, en Streamlit Community Cloud), el
-catálogo se importa automáticamente en el primer arranque, solo si aún no hay
-centros registrados; no crea cuentas de acceso. Para la base normal sin
-secretos, importa el catálogo una sola vez desde una terminal privada:
+El catálogo permanece en el proyecto. Para importar sus centros una vez en la
+base configurada, ejecuta desde una terminal privada:
 
 ```sh
 .venv/bin/python store.py import-catalog
@@ -251,10 +231,7 @@ El comando registra los 34 centros con sus nombres y ubicaciones, sin crear
 cuentas de acceso. Es idempotente: conserva los centros ya registrados y no
 sobrescribe sus datos. No se ha importado nada en Residencias.
 
-### Acceso final con cuentas
-
-Para activar el acceso con cuentas,
-inicia sin `SALUD_DEVELOPMENT_MODE=1` (está desactivado por defecto).
+### Acceso con cuentas
 
 Antes de exponer el servidor, crea la cuenta administradora en una terminal
 privada. No hay contraseñas predeterminadas ni formulario público de registro:
@@ -268,13 +245,10 @@ admite de 3 a 40 letras sin acentos, números, punto, guion y guion bajo.
 Las contraseñas requieren de 12 a 128 caracteres y se almacenan con scrypt y
 sal aleatoria. No escribas credenciales en el chat ni en el repositorio.
 
-```sh
-.venv/bin/python -m streamlit run app.py --server.address=0.0.0.0 --server.port=8503
-```
-
-Abre el puerto 8503 en la vista previa del editor. Se usa un puerto diferente
-del portal de Residencias. En modo con cuentas, la barra lateral del administrador
-permite elegir **Informes** o **Cuentas de centros**. Esta última sección permite
+Inicia la interfaz HTML con `python webapp.py` y abre el puerto **8503** en la
+vista previa del editor. Se usa un puerto diferente del portal de Residencias.
+El administrador dispone de enlaces de navegación a **Informes** y
+**Cuentas de centros**. Esta última sección permite
 crear un centro nuevo con su usuario y contraseña, o crear solo la
 cuenta de un centro ya registrado en el catálogo seleccionándolo de la lista,
 sin volver a escribir su nombre ni su ubicación. El administrador asigna el
@@ -287,8 +261,7 @@ inventario. Entrega las
 credenciales por un canal privado, nunca en GitHub. Todos usan el mismo enlace:
 el administrador consulta informes y cada centro accede solo a su inventario.
 Para entrar como centro, cierra la sesión administradora e inicia sesión con la
-cuenta del centro (o utiliza otro navegador). La gestión de cuentas no aparece
-en modo de desarrollo.
+cuenta del centro (o utiliza otro navegador).
 
 Cada centro accede a su inventario con la clave asignada por el administrador;
 solo el administrador puede cambiarla desde **Cuentas de centros**.
@@ -315,7 +288,7 @@ PostgreSQL es software libre. Supabase ofrece alojamiento gratuito con límites:
 Selecciona explícitamente **South America (São Paulo), `sa-east-1`** entre
 las [regiones disponibles](https://supabase.com/docs/guides/platform/regions);
 la región general «Americas» no significa Brasil. La cercanía geográfica no
-garantiza menor latencia: también importa la conexión entre Community Cloud y
+garantiza menor latencia: también importa la conexión entre el servicio web y
 la base. No hay garantía de disponibilidad continua en el plan gratuito.
 
 #### 1. Proteger los datos existentes antes de publicar cambios
@@ -325,8 +298,8 @@ de obtener un respaldo privado de su SQLite de producción.** Publicar código
 para añadir un botón de respaldo también puede reconstruir el contenedor y
 perder el archivo que intentas proteger.
 
-Esta versión incluye, solo para el administrador usando SQLite, **Respaldo de
-datos → Preparar respaldo → Descargar respaldo privado** en la barra lateral.
+Esta versión incluye, solo para el administrador usando SQLite, **Respaldo
+privado de datos → Descargar respaldo SQLite** en el panel de informes.
 Genera una copia consistente mediante la API de backup de SQLite; incluye
 cuentas, hashes de contraseñas, inventarios, sesiones y fechas. El botón
 solo estará disponible cuando esta versión esté ejecutándose; no recupera
@@ -357,13 +330,13 @@ unset DATABASE_URL
 El primer comando solicita un usuario administrador y una contraseña de al
 menos 12 caracteres, con confirmación. El segundo importa los centros, pero no
 crea sus cuentas ni recupera cargas anteriores. Verifica que ambos comandos
-terminen correctamente antes de publicar los cambios y configurar Secrets
-según el paso 3. Después, asigna cuentas y contraseñas desde **Cuentas de
+terminen correctamente antes de publicar los cambios y configurar las
+variables privadas del servicio web según el paso 3. Después, asigna cuentas y contraseñas desde **Cuentas de
 centros**. Este procedimiento crea un inventario nuevo, no restaura el anterior.
 
 1. Crea un proyecto Supabase en São Paulo y guarda su contraseña en privado.
 2. En **Connect → Session pooler**, copia la cadena PostgreSQL en modo sesión
-   (puerto **5432**), compatible con IPv4 y Community Cloud. No uses la URL de
+   (puerto **5432**), compatible con IPv4 y tu servicio de aplicación. No uses la URL de
    la API ni las claves `anon`/`service_role`. Obtén el host y usuario del panel;
    no los deduzcas del nombre de la región.
 3. Añade `sslmode=require` a la cadena (con `?` o `&`, según corresponda).
@@ -405,16 +378,12 @@ las secuencias para que los nuevos registros no reutilicen números existentes.
 Conserva cuentas y contraseñas actuales, permisos, históricos y estados semanales.
 No ejecutes dos aplicaciones que acepten cargas en bases diferentes.
 
-Solo después de verificar la migración, publica estos cambios y configura en
-**Streamlit Community Cloud → Settings → Secrets**, en el nivel superior:
+Solo después de verificar la migración, publica estos cambios y configura
+`DATABASE_URL` como variable privada de entorno en el servicio web:
 
-```toml
-DATABASE_URL = "postgresql://USUARIO:CLAVE_CODIFICADA@HOST:5432/postgres?sslmode=require"
-```
-
-Reemplaza los marcadores únicamente en Secrets, no en el repositorio. Conserva
-otros secretos existentes; no envíes la cadena por chat. Una base remota sin
-cuenta administradora bloquea el arranque en vez de crear cuentas nuevas.
+No guardes la cadena en el repositorio ni la compartas por chat. El portal no
+crea automáticamente la cuenta administradora: créala previamente con
+`python store.py bootstrap`.
 Verifica el acceso con las cuentas originales, los totales y los PDF antes de
 reanudar las cargas.
 
@@ -451,41 +420,38 @@ Las pruebas de integración PostgreSQL se habilitan con
 crean y eliminan bases temporales y requieren permiso para crear bases y roles.
 Nunca uses credenciales ni datos de producción para estas pruebas.
 
-### Demostración en Streamlit Community Cloud
+### Despliegue de la aplicación HTML
 
-Streamlit Community Cloud puede ejecutar esta aplicación directamente desde un
-repositorio de GitHub. Sin PostgreSQL externo, es adecuada para demostraciones
-con datos ficticios, pero no para conservar inventarios: la base SQLite está en el sistema de
-archivos local y puede perderse al reiniciar o volver a desplegar la aplicación.
-No cargues información real.
+Esta versión está preparada para Vercel. El archivo `pyproject.toml` define
+`webapp:app` como punto de entrada, `.python-version` selecciona Python 3.12
+y `public/` contiene los recursos estáticos que Vercel publica por CDN.
 
-1. Sube la rama `main` a GitHub. No incluyas la base local, contraseñas,
-   secretos ni respaldos; `data/` ya está excluido de Git.
-2. En [Streamlit Community Cloud](https://share.streamlit.io/), conecta GitHub
-   y selecciona **Create app**. Elige el repositorio, la rama `main` y
-   `app.py` como archivo principal.
-3. En **Advanced settings → Secrets**, configura un usuario administrador y
-   una contraseña privada de al menos 12 caracteres:
+1. Importa el repositorio en Vercel.
+2. Desde **Storage/Marketplace**, crea una base PostgreSQL nueva y conecta la
+   integración al proyecto. Vercel ya no ofrece su antiguo producto Postgres;
+   Marketplace permite proveedores como Neon, Supabase, Prisma Postgres y AWS
+   Aurora. Configura la cadena de conexión como `DATABASE_URL` en Production
+   y Preview. No uses SQLite: el sistema de archivos de Vercel Functions no es
+   persistente.
+3. Configura estas variables en Vercel, sin agregarlas al repositorio:
+   - `APP_ENV=production`
+   - `COOKIE_SECURE=1`
+   - `FLASK_SECRET_KEY`: una clave aleatoria privada.
+   - `BOOTSTRAP_ADMIN_USERNAME` y `BOOTSTRAP_ADMIN_PASSWORD`: credenciales
+     iniciales privadas; la contraseña debe tener entre 12 y 128 caracteres.
+4. Despliega. En el primer arranque con una base vacía, la aplicación crea la
+   cuenta administradora e importa el catálogo de centros. Después puedes
+   retirar las dos variables `BOOTSTRAP_ADMIN_*`; las cuentas ya quedan en
+   PostgreSQL. Crea las cuentas de los centros desde **Cuentas de centros**.
+5. Inicia sesión y verifica reportes, formularios y permisos antes de usar
+   información real. Si reinicias el proyecto, conserva la base Marketplace:
+   “empezar de cero” solo requiere una base vacía nueva, no borrar los recursos
+   de la aplicación.
 
-   ```toml
-   [bootstrap_admin]
-   username = "admin"
-   password = "reemplaza-por-una-clave-privada"
-   ```
-
-   No guardes estos valores en el repositorio ni los compartas. La aplicación
-   crea la cuenta inicial desde esos secretos solo cuando la base aún no tiene
-   una cuenta administradora.
-4. Despliega la aplicación e inicia sesión con esas credenciales. El catálogo
-   de centros se importa automáticamente en el primer arranque; en la barra
-   lateral, entra a **Cuentas de centros** y asigna usuario y contraseña a
-   cada centro seleccionándolo de la lista, sin volver a escribir su nombre.
-
-Si usas SQLite y Community Cloud reinicia o reconstruye la aplicación, la cuenta se puede
-volver a crear desde los secretos, pero los centros y los inventarios guardados
-en SQLite pueden desaparecer. Para uso real se requiere una base de datos
-externa persistente y copias de seguridad. Consulta la
-[guía de despliegue de Streamlit](https://docs.streamlit.io/deploy/streamlit-community-cloud/deploy-your-app).
+Vercel ejecuta Flask como una Function y publica CSS e imágenes desde `public/`.
+Consulta la [guía de Flask en Vercel](https://vercel.com/docs/frameworks/backend/flask),
+la [documentación de PostgreSQL en Vercel](https://vercel.com/docs/postgres) y
+las [limitaciones del sistema de archivos](https://vercel.com/docs/functions/runtimes).
 
 Antes de usar información real:
 
@@ -545,7 +511,7 @@ Un cero significa que no hay unidades registradas, no que el centro haya
 certificado la ausencia de bienes. Si existen tipos antiguos que no corresponden
 al modelo, la exportación solicita corregirlos en vez de omitir cantidades.
 Las descargas respetan los permisos del centro; solo administración puede
-generar el consolidado. En desarrollo siguen habilitadas sin contraseña.
+generar el consolidado.
 
 En administración, **GENERAR REPORTE**, y en la cuenta de cada centro,
 **DESCARGAR PDF**, aparecen directamente, sin un paso previo de generación.
@@ -576,7 +542,8 @@ Las pruebas utilizan bases temporales, sin tocar datos reales:
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Incluyen aislamiento entre centros, intentos con identificadores ajenos, permisos,
+Incluyen pruebas del HTML/Flask y compatibilidad de la interfaz anterior,
+aislamiento entre centros, intentos con identificadores ajenos, permisos,
 caducidad y revocación de sesiones, creación y edición atómicas, más de 35 centros y flujos
 de acceso y registro con `streamlit.testing.v1.AppTest`.
 Una prueba recorre individualmente los 34 centros del catálogo y sus siete ítems:

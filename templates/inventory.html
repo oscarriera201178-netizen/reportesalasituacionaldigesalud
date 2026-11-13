@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}{{ center.name }} · DIGESALUD-MPPD{% endblock %}
+{% block content %}
+<section class="center-heading"><h1>{{ center.name|upper }}</h1></section>
+<nav class="category-nav" aria-label="Categorías de inventario">
+  {% for key, label in categories.items() %}
+    <a class="button {% if category == key %}button-primary{% else %}button-muted{% endif %}" href="{{ url_for('inventory', center_id=center.id, section=key) }}">{{ label }}</a>
+  {% endfor %}
+</nav>
+{% if loaded and status.editable %}
+  <div class="notice notice-success">Sección cargada y bloqueada hasta el envío final. Puedes editarla para corregirla.</div>
+  <form method="post" action="{{ url_for('save_inventory', center_id=center.id, section=category) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="edit">
+    <button class="button button-muted" type="submit">Editar sección</button>
+  </form>
+{% endif %}
+<section class="panel">
+  <h2>{{ categories[category]|upper }}</h2>
+  {% if vehicle_history %}
+    <details class="history-panel"><summary>Historial de vehículos sin asignar</summary>
+      <p>Estos registros no se asignan automáticamente ni se suman al inventario actual.</p>
+      <ul>{% for row in vehicle_history %}<li>{{ row.kind }}: {{ row.operational }} operativos, {{ row.unavailable }} inoperativos</li>{% endfor %}</ul>
+    </details>
+  {% endif %}
+  {% if equipment_history %}
+    <details class="history-panel"><summary>Historial de equipos anteriores</summary>
+      <p>Solo historial; estos registros no se suman al inventario actual.</p>
+      <ul>{% for row in equipment_history %}<li>{{ row.kind }} · {{ row.code }} · {{ row.state }}</li>{% endfor %}</ul>
+    </details>
+  {% endif %}
+  {% if legacy_facilities %}
+    <details class="history-panel"><summary>Registros anteriores conservados como historial</summary>
+      <ul>{% for row in legacy_facilities %}<li>{{ row.name }} · {{ row.kind }} · {{ row.state }}</li>{% endfor %}</ul>
+    </details>
+  {% endif %}
+  {% if rows or presence_items %}
+    <p>Indica las cantidades de cada tipo. Si no tienes unidades, deja 00.</p>
+    <form method="post" action="{{ url_for('save_inventory', center_id=center.id, section=category) }}" class="inventory-form" id="inventory-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="load">
+      {% if category == "Vehículos" %}
+        {% for group, kinds in vehicle_groups.items() %}
+          <h3 class="group-heading">{{ group }}</h3>
+          {% for row in rows if row.kind in kinds %}
+            {% set idx = rows.index(row) %}
+            <div class="quantity-row" data-quantity-row data-group="{{ group }}">
+              <strong>{{ row.kind }}</strong>
+              <label>Operativas<input type="number" min="0" max="1000000" name="qty_{{ idx }}_operational" value="{{ row.operational }}" required {% if not editable %}disabled{% endif %}></label>
+              <label>Inoperativas<input type="number" min="0" max="1000000" name="qty_{{ idx }}_unavailable" value="{{ row.unavailable }}" required {% if not editable %}disabled{% endif %}></label>
+              <span class="row-total">Total: {{ row.operational + row.unavailable }}</span>
+            </div>
+          {% endfor %}
+          <p class="group-total" data-group-total="{{ group }}">Subtotal {{ group }}: <span>0</span></p>
+        {% endfor %}
+        {% for row in rows if row.kind not in vehicle_kinds %}
+          {% set idx = rows.index(row) %}
+          <div class="quantity-row" data-quantity-row>
+            <strong>{{ row.kind }}</strong>
+            <label>Operativas<input type="number" min="0" max="1000000" name="qty_{{ idx }}_operational" value="{{ row.operational }}" required {% if not editable %}disabled{% endif %}></label>
+            <label>Inoperativas<input type="number" min="0" max="1000000" name="qty_{{ idx }}_unavailable" value="{{ row.unavailable }}" required {% if not editable %}disabled{% endif %}></label>
+            <span class="row-total">Total: {{ row.operational + row.unavailable }}</span>
+          </div>
+        {% endfor %}
+      {% else %}
+        {% for row in rows %}
+          <div class="quantity-row" data-quantity-row>
+            <strong>{{ row.kind }}</strong>
+            <label>Operativas<input type="number" min="0" max="1000000" name="qty_{{ loop.index0 }}_operational" value="{{ row.operational }}" required></label>
+            <label>Inoperativas<input type="number" min="0" max="1000000" name="qty_{{ loop.index0 }}_unavailable" value="{{ row.unavailable }}" required></label>
+            <span class="row-total">Total: {{ row.operational + row.unavailable }}</span>
+          </div>
+        {% endfor %}
+      {% endif %}
+      {% if rows %}<p class="grand-total" id="inventory-total">Total general: 0 operativas · 0 inoperativas · 0 unidades</p>{% endif %}
+      {% if presence_items %}
+        {% for item in presence_items %}
+          {% set idx = loop.index0 %}
+          <fieldset class="facility-card" {% if item.with_quantity %}data-facility-card{% endif %}>
+            <legend>{{ item.label }}</legend>
+            <span>¿Hay {{ item.label|lower }}?</span>
+            <label class="inline"><input type="radio" name="presence_{{ idx }}" value="Sí" {% if item.has %}checked{% endif %} required {% if not editable %}disabled{% endif %}>Sí</label>
+            <label class="inline"><input type="radio" name="presence_{{ idx }}" value="No" {% if not item.has %}checked{% endif %} required {% if not editable %}disabled{% endif %}>No</label>
+            {% if item.with_quantity %}
+              <div class="form-grid">
+                <label>Operativas<input type="number" min="0" max="1000000" name="qty_{{ idx }}_operational" value="{{ item.operational }}" required {% if not editable %}disabled{% endif %}></label>
+                <label>Fuera de servicio<input type="number" min="0" max="1000000" name="qty_{{ idx }}_unavailable" value="{{ item.unavailable }}" required {% if not editable %}disabled{% endif %}></label>
+              </div>
+              <strong data-facility-total>Total: {{ item.operational + item.unavailable }}</strong>
+            {% else %}
+              <label>Estado
+                <select name="state_{{ idx }}" {% if item.has %}required{% endif %} {% if not editable %}disabled{% endif %}>
+                  {% for state in states %}<option {% if item.state == state %}selected{% endif %}>{{ state }}</option>{% endfor %}
+                </select>
+              </label>
+            {% endif %}
+          </fieldset>
+        {% endfor %}
+      {% endif %}
+      {% if category == "Laboratorio" %}
+        <fieldset class="facility-card">
+          <legend>Laboratorios especiales</legend>
+          <label>¿Hay laboratorios especiales?
+            <select name="special_presence" {% if not editable %}disabled{% endif %}>
+              <option {% if special_labs %}selected{% endif %}>Sí</option>
+              <option {% if not special_labs %}selected{% endif %}>No</option>
+            </select>
+          </label>
+          {% for slot in range(1, 4) %}
+            {% set laboratory = special_labs|selectattr("slot", "equalto", slot)|first %}
+            <div class="form-grid">
+              <label>Nombre {{ slot }}<input name="special_name_{{ slot }}" maxlength="160" value="{{ laboratory.name if laboratory else '' }}" {% if not editable %}disabled{% endif %}></label>
+              <label>Estado {{ slot }}
+                <select name="special_state_{{ slot }}" {% if not editable %}disabled{% endif %}>
+                  {% for state in states %}<option {% if laboratory and laboratory.state == state %}selected{% endif %}>{{ state }}</option>{% endfor %}
+                </select>
+              </label>
+            </div>
+          {% endfor %}
+        </fieldset>
+      {% endif %}
+      {% if editable %}
+        <button class="button button-primary" type="submit" onclick="return confirm('¿Ha editado todos los campos? Confirma para guardar esta sección.')">Cargar datos</button>
+      {% endif %}
+    </form>
+  {% else %}
+    {% for item in presence_items %}
+      <p><strong>{{ item.label }}:</strong> {{ "Sí" if item.has else "No" }}</p>
+    {% endfor %}
+  {% endif %}
+  {% if not editable and rows %}
+    <p class="notice notice-info">Esta sección está en modo de consulta. Usa Editar para habilitar cambios antes de enviar.</p>
+  {% endif %}
+</section>
+<section class="panel">
+  <h2>Envío semanal</h2>
+  {% if status.loaded %}
+    <p class="notice notice-success">{{ status.status }}</p>
+  {% else %}
+    <p class="notice notice-info">{{ status.status }}</p>
+    {% if missing %}
+      <p>Para enviar, completa y carga cada sección:</p>
+      <ul>{% for item in missing %}<li>{{ item }}</li>{% endfor %}</ul>
+    {% elif status.editable %}
+      <form method="post" action="{{ url_for('save_inventory', center_id=center.id, section=category) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="submit">
+        <button class="button button-primary" type="submit" onclick="return confirm('¿Confirmas el envío del inventario semanal a DIGESALUD-MPPD?')">Enviar a DIGESALUD-MPPD</button>
+      </form>
+    {% endif %}
+  {% endif %}
+  <a class="button button-muted" href="{{ url_for('download_center_report', center_id=center.id, category=pdf_category) }}">Descargar PDF de esta sección</a>
+</section>
+<script>
+document.querySelectorAll("[data-quantity-row]").forEach((row) => {
+  const inputs = row.querySelectorAll('input[type="number"]');
+  const total = row.querySelector(".row-total");
+  const update = () => {
+    const operational = Number(inputs[0].value) || 0;
+    const unavailable = Number(inputs[1].value) || 0;
+    if (total) total.textContent = `Total: ${operational + unavailable}`;
+    const groupTotal = document.querySelector(`[data-group-total="${row.dataset.group}"] span`);
+    if (groupTotal) {
+      const groupRows = [...document.querySelectorAll("[data-quantity-row]")]
+        .filter((item) => item.dataset.group === row.dataset.group);
+      const sums = groupRows.reduce((result, item) => {
+        const values = item.querySelectorAll('input[type="number"]');
+        result[0] += Number(values[0].value) || 0;
+        result[1] += Number(values[1].value) || 0;
+        return result;
+      }, [0, 0]);
+      groupTotal.textContent = `${sums[0]} operativas · ${sums[1]} inoperativas · ${sums[0] + sums[1]} unidades`;
+    }
+    const rows = [...document.querySelectorAll("[data-quantity-row]")];
+    if (rows.length) {
+      const sums = rows.reduce((result, item) => {
+        const values = item.querySelectorAll('input[type="number"]');
+        result[0] += Number(values[0].value) || 0;
+        result[1] += Number(values[1].value) || 0;
+        return result;
+      }, [0, 0]);
+      const grandTotal = document.querySelector("#inventory-total");
+      if (grandTotal) grandTotal.textContent = `Total general: ${sums[0]} operativas · ${sums[1]} inoperativas · ${sums[0] + sums[1]} unidades`;
+    }
+  };
+  inputs.forEach((input) => input.addEventListener("input", update));
+  update();
+});
+document.querySelectorAll("[data-facility-card]").forEach((card) => {
+  const inputs = card.querySelectorAll('input[type="number"]');
+  const total = card.querySelector("[data-facility-total]");
+  const update = () => {
+    if (total) total.textContent = `Total: ${(Number(inputs[0].value) || 0) + (Number(inputs[1].value) || 0)}`;
+  };
+  inputs.forEach((input) => input.addEventListener("input", update));
+});
+</script>
+{% endblock %}
