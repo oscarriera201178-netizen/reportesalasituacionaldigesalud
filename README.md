@@ -289,9 +289,9 @@ El año se selecciona de una lista con los años de los registros accesibles y e
 año actual. Todos los campos de ingreso son obligatorios; el servidor rechaza
 registros incompletos sin guardar datos parciales.
 
-Los usuarios de centros de salud disponen además del ítem **Registros de
-Militares fallecidos**, independiente del inventario y de su envío semanal.
-Usa los mismos datos, filtros y listas que el registro de componentes, pero el
+Los usuarios de centros de salud disponen además del ítem **Militares Fallecidos
+en Centros de Salud**, independiente del inventario y de su envío semanal.
+Usa los mismos datos y listas que el registro de componentes, pero el
 centro debe seleccionar el componente del militar. El centro de salud se
 asigna automáticamente desde la cuenta y no puede modificarse en el formulario.
 Cada centro solo ingresa y consulta sus registros, sin editarlos después de
@@ -300,7 +300,7 @@ guardar. Administración consulta un consolidado exclusivo de centros, en un
 páginas si es necesario, sin separar cuadros por institución. No se mezcla
 con el consolidado de las cuentas de componentes.
 
-El ítem **Pacientes Militares atendidos por Accidentes de Tránsito** es exclusivo
+El ítem **Militares atendidos por accidentes de Tránsito** es exclusivo
 para centros de salud y también es independiente del envío semanal. Conserva los
 datos del militar y su componente, pero usa **fecha de atención**, con edad
 calculada en esa fecha. Todos los campos son obligatorios. Incluye estas listas:
@@ -316,6 +316,11 @@ y centro de salud, y puede filtrar por componente, mes/año de atención, REDI y
 tipo de accidente. Los mismos filtros se aplican al PDF con cintillo y pie de
 letra institucional. Estos registros no se mezclan con los de fallecidos:
 seleccionar **Fallecido** no crea automáticamente un registro de fallecimiento.
+
+Al ingresar a cualquiera de estos dos ítems, los centros ven únicamente el
+formulario de ingreso y sus registros guardados, sin buscador ni controles de
+generación de PDF. Administración conserva los filtros y la descarga de los
+consolidados.
 
 Cada centro accede a su inventario con la clave asignada por el administrador;
 solo el administrador puede cambiarla desde **Cuentas de centros**.

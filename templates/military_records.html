@@ -1,14 +1,12 @@
 {% extends "base.html" %}
-{% set registry_title = "Pacientes Militares atendidos por Accidentes de Tránsito" if traffic_registry else ("Registros de Militares fallecidos en centros de salud" if health_registry else "Registro de Militares Fallecidos") %}
+{% set registry_title = "Militares atendidos por accidentes de Tránsito" if traffic_registry else ("Militares Fallecidos en Centros de Salud" if health_registry else "Registro de Militares Fallecidos") %}
 {% block title %}{{ registry_title }} · DIGESALUD-MPPD{% endblock %}
 {% block content %}
+{% if not health_registry or current_actor.role == "admin" %}
 <div class="admin-nav">
   {% if current_actor.role == "admin" %}
     <a class="button button-muted" href="{{ url_for('home') }}">Informes de centros</a>
     <a class="button button-muted" href="{{ url_for('accounts') }}">Cuentas de centros</a>
-  {% endif %}
-  {% if health_registry and current_actor.role != "admin" %}
-    <a class="button button-muted" href="{{ url_for('home') }}">Inventario del centro</a>
   {% endif %}
   <a class="button button-primary" href="{{ url_for(report_endpoint) }}">{{ registry_title }}</a>
 </div>
@@ -68,8 +66,10 @@
     <button class="button button-primary" type="submit" formaction="{{ url_for(download_endpoint) }}">Generar reporte PDF</button>
   </form>
 </section>
+{% endif %}
 {% if current_actor.role != "admin" %}
 <section class="panel">
+  {% if health_registry %}<h1>{{ registry_title }}</h1>{% endif %}
   <h2>Ingresar registro</h2>
   <p>Todos los campos son obligatorios. El registro no se guardará si falta algún dato.</p>
   <form method="post" action="{{ url_for(report_endpoint) }}" class="form-grid">

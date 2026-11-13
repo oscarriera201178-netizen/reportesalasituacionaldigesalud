@@ -397,9 +397,9 @@ def generate_military_pdf(records, component=None, *, health_registry=False, tra
                     )
                 _text(
                     page, pymupdf.Rect(28, 104, 932, 135),
-                    "Pacientes Militares atendidos por Accidentes de Tránsito"
+                    "Militares atendidos por accidentes de Tránsito"
                     if traffic_registry else (
-                        "Registros de Militares Fallecidos en Centros de Salud"
+                        "Militares Fallecidos en Centros de Salud"
                         if health_registry else f"Registro de Militares Fallecidos en el Componente {name}"
                     ),
                     16, True,
