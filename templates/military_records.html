@@ -19,52 +19,6 @@
   {% else %}
     <p>{{ registry_title }} en el Componente <strong>{{ current_actor.center_name }}</strong>. Solo puedes consultar los registros de tu institución.</p>
   {% endif %}
-  <form method="get" action="{{ url_for(report_endpoint) }}" class="filter-grid">
-    {% if current_actor.role == "admin" or health_registry %}
-      <label>Componente del reporte
-        <select name="component">
-          <option value="">Todos los componentes</option>
-          {% for component in military_components %}
-            <option value="{{ component }}" {% if selected_component == component %}selected{% endif %}>{{ component }}</option>
-          {% endfor %}
-        </select>
-      </label>
-    {% endif %}
-    <label>{{ "Mes de atención" if traffic_registry else "Mes de fallecimiento" }}
-      <select name="month">
-        <option value="">Todos los meses</option>
-        {% for label in months %}
-          <option value="{{ loop.index }}" {% if month == loop.index %}selected{% endif %}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>{{ "Año de atención" if traffic_registry else "Año de fallecimiento" }}
-      <select name="year">
-        <option value="">Todos los años</option>
-        {% for option in years %}
-          <option value="{{ option }}" {% if year == option %}selected{% endif %}>{{ option }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>REDI del reporte
-      <select name="redi">
-        <option value="">Todas las REDI</option>
-        {% for redi in military_redi %}
-          <option value="{{ redi }}" {% if selected_redi == redi %}selected{% endif %}>{{ redi }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <label>{{ "Tipo de accidente del reporte" if traffic_registry else "Causa de fallecimiento del reporte" }}
-      <select name="cause">
-        <option value="">{{ "Todos los tipos" if traffic_registry else "Todas las causas" }}</option>
-        {% for cause in military_causes %}
-          <option value="{{ cause }}" {% if selected_cause == cause %}selected{% endif %}>{{ cause }}</option>
-        {% endfor %}
-      </select>
-    </label>
-    <button class="button button-muted" type="submit">Buscar</button>
-    <button class="button button-primary" type="submit" formaction="{{ url_for(download_endpoint) }}">Generar reporte PDF</button>
-  </form>
 </section>
 {% endif %}
 {% if current_actor.role != "admin" %}
@@ -115,4 +69,55 @@
     <p>No hay registros ingresados.</p>
   {% endif %}
 </section>
+{% if not health_registry or current_actor.role == "admin" %}
+<section class="panel">
+  <h2>Buscar registros</h2>
+  <form method="get" action="{{ url_for(report_endpoint) }}" class="filter-grid">
+    {% if current_actor.role == "admin" or health_registry %}
+      <label>Componente del reporte
+        <select name="component">
+          <option value="">Todos los componentes</option>
+          {% for component in military_components %}
+            <option value="{{ component }}" {% if selected_component == component %}selected{% endif %}>{{ component }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endif %}
+    <label>{{ "Mes de atención" if traffic_registry else "Mes de fallecimiento" }}
+      <select name="month">
+        <option value="">Todos los meses</option>
+        {% for label in months %}
+          <option value="{{ loop.index }}" {% if month == loop.index %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>{{ "Año de atención" if traffic_registry else "Año de fallecimiento" }}
+      <select name="year">
+        <option value="">Todos los años</option>
+        {% for option in years %}
+          <option value="{{ option }}" {% if year == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>REDI del reporte
+      <select name="redi">
+        <option value="">Todas las REDI</option>
+        {% for redi in military_redi %}
+          <option value="{{ redi }}" {% if selected_redi == redi %}selected{% endif %}>{{ redi }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>{{ "Tipo de accidente del reporte" if traffic_registry else "Causa de fallecimiento del reporte" }}
+      <select name="cause">
+        <option value="">{{ "Todos los tipos" if traffic_registry else "Todas las causas" }}</option>
+        {% for cause in military_causes %}
+          <option value="{{ cause }}" {% if selected_cause == cause %}selected{% endif %}>{{ cause }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="button button-muted" type="submit">Buscar</button>
+    <button class="button button-primary" type="submit" formaction="{{ url_for(download_endpoint) }}">Generar reporte PDF</button>
+  </form>
+</section>
+{% endif %}
 {% endblock %}

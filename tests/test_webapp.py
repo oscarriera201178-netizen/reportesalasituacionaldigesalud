@@ -384,6 +384,37 @@ class HtmlApplicationTests(unittest.TestCase):
             ).status_code, 404)
         self.assertEqual(len(self.store.military_records(self.admin_token)), 1)
 
+    def test_military_registry_forms_precede_records_and_filters_come_last(self):
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        north = self.store.login("norte", CENTER_PASSWORD)
+        guard = self.store.login("guardia", CENTER_PASSWORD)
+        cases = (
+            (north, ("/health/military", "/health/traffic"), True, False),
+            (guard, ("/military", "/military/traffic"), True, True),
+            (self.admin_token, ("/military", "/health/military", "/health/traffic", "/military/traffic"),
+             False, True),
+        )
+        for token, paths, has_form, has_filters in cases:
+            with self.client.session_transaction() as browser_session:
+                browser_session["token"] = token
+            for path in paths:
+                with self.subTest(path=path, form=has_form, filters=has_filters):
+                    page = self.client.get(path)
+                    self.assertEqual(page.status_code, 200)
+                    html = page.get_data(as_text=True)
+                    records = html.index("<h2>Registros (")
+                    if has_form:
+                        self.assertLess(html.index('<form method="post" action="' + path), records)
+                    else:
+                        self.assertNotIn("<h2>Ingresar registro</h2>", html)
+                    if has_filters:
+                        self.assertLess(records, html.index('class="filter-grid"'))
+                        self.assertIn("Generar reporte PDF", html[records:])
+                    else:
+                        self.assertNotIn('class="filter-grid"', html)
+
     def test_inventory_requires_login_and_limits_center_access(self):
         response = self.client.get(f"/inventory/{self.center['id']}")
         self.assertEqual(response.status_code, 302)
