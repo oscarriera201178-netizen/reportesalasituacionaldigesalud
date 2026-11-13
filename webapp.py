@@ -383,6 +383,11 @@ def create_app(store=None, *, secret_key=None):
             abort(400, "Acción no válida.")
         return redirect(url_for("accounts"))
 
+    @app.get("/admin/military")
+    @admin_required
+    def military_records_menu():
+        return render_template("military_patient_records.html")
+
     @app.get("/health/patients")
     def military_patient_records():
         current_actor = require_role()
@@ -417,7 +422,9 @@ def create_app(store=None, *, secret_key=None):
             abort(400, "Tipo de accidente no válido." if traffic_registry else "Causa de fallecimiento no válida.")
         filters["redi"] = selected_redi
         filters["cause"] = selected_cause
-        available_records = get_store().traffic_records(token()) if traffic_registry else get_store().military_records(
+        available_records = get_store().traffic_records(
+            token(), account_type="health" if health_registry else "military",
+        ) if traffic_registry else get_store().military_records(
             token(), account_type="health" if health_registry else "military",
         )
         date_key = "attention_date" if traffic_registry else "death_date"
@@ -437,6 +444,10 @@ def create_app(store=None, *, secret_key=None):
         return records, selected_component, filters, sorted(years, reverse=True)
 
     @app.get("/military")
+    @app.get(
+        "/military/traffic", defaults={"traffic_registry": True},
+        endpoint="component_traffic_report",
+    )
     @app.get("/health/military", defaults={"health_registry": True}, endpoint="health_military_report")
     @app.get(
         "/health/traffic", defaults={"health_registry": True, "traffic_registry": True},
@@ -463,10 +474,10 @@ def create_app(store=None, *, secret_key=None):
             health_registry=health_registry,
             traffic_registry=traffic_registry, traffic_conditions=TRAFFIC_CONDITIONS,
             traffic_roles=TRAFFIC_ROLES,
-            report_endpoint="traffic_report" if traffic_registry else (
+            report_endpoint=("traffic_report" if health_registry else "component_traffic_report") if traffic_registry else (
                 "health_military_report" if health_registry else "military_report"
             ),
-            download_endpoint="download_traffic_report" if traffic_registry else (
+            download_endpoint=("download_traffic_report" if health_registry else "download_component_traffic_report") if traffic_registry else (
                 "download_health_military_report" if health_registry else "download_military_report"
             ),
             months=(
@@ -495,25 +506,33 @@ def create_app(store=None, *, secret_key=None):
         return redirect(url_for("health_military_report" if health_registry else "military_report"))
 
     @app.post("/health/traffic")
-    def add_traffic_record():
+    @app.post(
+        "/military/traffic", defaults={"component_registry": True},
+        endpoint="add_component_traffic_record",
+    )
+    def add_traffic_record(component_registry=False):
         current_actor = require_role("center")
         if not isinstance(current_actor, dict):
             return current_actor or redirect(url_for("login"))
-        if current_actor["account_type"] != "health":
+        if current_actor["account_type"] != ("military" if component_registry else "health"):
             abort(403)
         get_store().add_traffic_record(
-            token(), **{
+            token(), account_type="military" if component_registry else "health", **{
                 field: request.form.get(field, "") for field in (
                     "grade", "full_name", "cedula", "birth_date", "attention_date",
                     "accident_type", "patient_condition", "traffic_role", "redi",
-                    "zodi", "unit", "component",
+                    "zodi", "unit", "component", "attention_center",
                 )
             },
         )
         flash("Registro ingresado.", "success")
-        return redirect(url_for("traffic_report"))
+        return redirect(url_for("component_traffic_report" if component_registry else "traffic_report"))
 
     @app.get("/military/report.pdf")
+    @app.get(
+        "/military/traffic/report.pdf", defaults={"traffic_registry": True},
+        endpoint="download_component_traffic_report",
+    )
     @app.get(
         "/health/military/report.pdf", defaults={"health_registry": True},
         endpoint="download_health_military_report",
@@ -537,10 +556,12 @@ def create_app(store=None, *, secret_key=None):
         pdf = generate_military_pdf(
             records, component=selected_component, health_registry=health_registry,
             traffic_registry=traffic_registry,
+            component_traffic_registry=traffic_registry and not health_registry,
         )
         return send_file(
             io.BytesIO(pdf), as_attachment=True,
-            download_name="Pacientes_Militares_Accidentes_Transito.pdf"
+            download_name=("Militares_Involucrados_Accidentes_Transito.pdf"
+                           if not health_registry else "Pacientes_Militares_Accidentes_Transito.pdf")
             if traffic_registry else "Registro_de_Militares_Fallecidos.pdf",
             mimetype="application/pdf",
         )

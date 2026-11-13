@@ -70,20 +70,21 @@ class HtmlApplicationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertIn("/login", response.headers["Location"])
         self.login("norte", CENTER_PASSWORD)
-        for token, home_path in (
-            (self.store.login("norte", CENTER_PASSWORD), f"/inventory/{self.center['id']}"),
-            (self.admin_token, "/"),
+        for token, home_path, menu_path, title in (
+            (self.store.login("norte", CENTER_PASSWORD), f"/inventory/{self.center['id']}",
+             "/health/patients", "Registros de Pacientes Militares"),
+            (self.admin_token, "/", "/admin/military", "Registros de Militares"),
         ):
             with self.subTest(home=home_path):
                 with self.client.session_transaction() as browser_session:
                     browser_session["token"] = token
                 home = self.client.get(home_path)
-                self.assertIn(b'href="/health/patients"', home.data)
+                self.assertIn(f'href="{menu_path}"'.encode(), home.data)
                 self.assertNotIn(b'href="/health/military"', home.data)
                 self.assertNotIn(b'href="/health/traffic"', home.data)
-                menu = self.client.get("/health/patients")
+                menu = self.client.get(menu_path)
                 self.assertEqual(menu.status_code, 200)
-                self.assertIn(b"<h1>Registros de Pacientes Militares</h1>", menu.data)
+                self.assertIn(f"<h1>{title}</h1>".encode(), menu.data)
                 self.assertIn(b'href="/">Regresar</a>', menu.data)
                 response = self.client.get("/", follow_redirects=True)
                 self.assertEqual(response.status_code, 200)
@@ -92,14 +93,133 @@ class HtmlApplicationTests(unittest.TestCase):
                     self.assertIn(f'href="{path}"'.encode(), menu.data)
                     page = self.client.get(path)
                     self.assertEqual(page.status_code, 200)
-                    self.assertIn(b'href="/health/patients">Regresar</a>', page.data)
+                    self.assertIn(f'href="{menu_path}">Regresar</a>'.encode(), page.data)
+                if token == self.admin_token:
+                    for path in ("/military", "/military/traffic"):
+                        self.assertIn(f'href="{path}"'.encode(), menu.data)
+                    self.assertIn(b"Militares fallecidos", menu.data)
+                    self.assertIn("Militares Atendidos en Centros de Salud por Accidentes de Tránsito".encode(), menu.data)
+                else:
+                    self.assertNotIn(b'href="/military"', menu.data)
+                    self.assertNotIn(b'href="/military/traffic"', menu.data)
+                    self.assertEqual(self.client.get("/admin/military").status_code, 403)
         self.store.create_military_account(
             self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
         )
         with self.client.session_transaction() as browser_session:
             browser_session["token"] = self.store.login("guardia", CENTER_PASSWORD)
         self.assertEqual(self.client.get("/health/patients").status_code, 403)
+        self.assertEqual(self.client.get("/admin/military").status_code, 403)
         self.assertNotIn(b'href="/health/patients"', self.client.get("/military").data)
+
+    def test_components_register_traffic_with_manual_attention_center_and_separate_consolidation(self):
+        import pymupdf
+
+        self.assertEqual(self.client.get("/military/traffic").status_code, 302)
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        self.store.create_military_account(
+            self.admin_token, "Armada Bolivariana", "armada", CENTER_PASSWORD,
+        )
+        self.login("guardia", CENTER_PASSWORD)
+        csrf = self.authenticated_csrf()
+        death_page = self.client.get("/military")
+        self.assertIn(b'href="/military/traffic"', death_page.data)
+        page = self.client.get("/military/traffic")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Militares Involucrados en Accidentes de Tránsito".encode(), page.data)
+        self.assertIn(b'name="attention_center" maxlength="160" required', page.data)
+        self.assertNotIn(b'<select name="component"', page.data)
+        fields = {
+            "grade": "CAP", "full_name": "Paciente componente", "cedula": "V-12345678",
+            "birth_date": "2000-10-16", "attention_date": "2026-10-15",
+            "accident_type": "Moto", "patient_condition": "Heridas graves",
+            "traffic_role": "Conductor", "redi": "REDI Capital", "zodi": "zodi prueba",
+            "unit": "unidad prueba", "attention_center": "hospital publico de prueba",
+        }
+        for field in fields:
+            for value in (None, "", "   "):
+                invalid = {**fields}
+                if value is None:
+                    del invalid[field]
+                else:
+                    invalid[field] = value
+                with self.subTest(field=field, value=value):
+                    response = self.client.post(
+                        "/military/traffic", data={"csrf_token": csrf, **invalid},
+                    )
+                    self.assertEqual(response.status_code, 303)
+                    self.assertEqual(self.store.traffic_records(
+                        self.admin_token, account_type="military",
+                    ), [])
+        self.assertEqual(self.client.post("/military/traffic", data=fields).status_code, 400)
+        response = self.client.post(
+            "/military/traffic",
+            data={"csrf_token": csrf, **fields, "component": "Armada Bolivariana", "center_id": "1"},
+        )
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/military/traffic")
+        rows = self.store.traffic_records(self.admin_token, account_type="military")
+        self.assertEqual(rows[0]["component"], "Guardia Nacional Bolivariana")
+        self.assertEqual(rows[0]["center_name"], "HOSPITAL PUBLICO DE PRUEBA")
+        self.assertEqual(rows[0]["age"], 25)
+        armada = self.store.login("armada", CENTER_PASSWORD)
+        self.store.add_traffic_record(
+            armada, **{**fields, "full_name": "PACIENTE ARMADA", "attention_date": "2025-11-15",
+                       "attention_center": "hospital segundo"},
+            account_type="military",
+        )
+        page = self.client.get("/military/traffic?component=Armada+Bolivariana")
+        self.assertIn(b"PACIENTE COMPONENTE", page.data)
+        self.assertNotIn(b"PACIENTE ARMADA", page.data)
+        pdf = self.client.get("/military/traffic/report.pdf")
+        self.assertEqual(pdf.status_code, 200)
+        with pymupdf.open(stream=pdf.data, filetype="pdf") as document:
+            text = " ".join(document[0].get_text().split())
+        self.assertIn("HOSPITAL PUBLICO DE PRUEBA", text)
+        self.assertNotIn("PACIENTE ARMADA", text)
+        north = self.store.login("norte", CENTER_PASSWORD)
+        self.store.add_traffic_record(
+            north, **{**fields, "full_name": "PACIENTE CENTRO", "component": "Armada Bolivariana"},
+        )
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = north
+        for path in ("/military/traffic", "/military/traffic/report.pdf"):
+            self.assertEqual(self.client.get(path).status_code, 403)
+        self.assertEqual(self.client.post(
+            "/military/traffic", data={"csrf_token": csrf, **fields},
+        ).status_code, 403)
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = self.admin_token
+        page = self.client.get("/military/traffic")
+        self.assertIn(b"PACIENTE COMPONENTE", page.data)
+        self.assertIn(b"PACIENTE ARMADA", page.data)
+        self.assertNotIn(b"PACIENTE CENTRO", page.data)
+        self.assertNotIn(b'name="attention_center"', page.data)
+        pdf = self.client.get("/military/traffic/report.pdf")
+        with pymupdf.open(stream=pdf.data, filetype="pdf") as document:
+            self.assertEqual(len(document), 1)
+            self.assertTrue(document[0].get_xobjects())
+            text = " ".join(document[0].get_text().split())
+        for value in ("Militares Involucrados en Accidentes de Tránsito", "PACIENTE COMPONENTE",
+                      "PACIENTE ARMADA", "HOSPITAL PUBLICO DE PRUEBA", "HOSPITAL SEGUNDO",
+                      "FUENTE: Sala Situacional/DIGESALUD"):
+            self.assertIn(value, text)
+        self.assertNotIn("PACIENTE CENTRO", text)
+        filters = {"month": "10", "year": "2026", "cause": "Moto",
+                   "component": "Guardia Nacional Bolivariana", "redi": "REDI Capital"}
+        page = self.client.get("/military/traffic", query_string=filters)
+        self.assertIn(b"PACIENTE COMPONENTE", page.data)
+        self.assertNotIn(b"PACIENTE ARMADA", page.data)
+        pdf = self.client.get("/military/traffic/report.pdf", query_string=filters)
+        with pymupdf.open(stream=pdf.data, filetype="pdf") as document:
+            text = " ".join(document[0].get_text().split())
+        self.assertIn("PACIENTE COMPONENTE", text)
+        self.assertNotIn("PACIENTE ARMADA", text)
+        self.assertEqual(self.client.post(
+            "/military/traffic", data={"csrf_token": csrf, **fields},
+        ).status_code, 403)
 
     def test_inventory_requires_login_and_limits_center_access(self):
         response = self.client.get(f"/inventory/{self.center['id']}")

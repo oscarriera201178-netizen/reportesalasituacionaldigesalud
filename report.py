@@ -314,7 +314,11 @@ def generate_pdf(store, token, center_id=None, *, category=None, kind=None, vehi
         return doc.tobytes(garbage=4, deflate=True)
 
 
-def generate_military_pdf(records, component=None, *, health_registry=False, traffic_registry=False):
+def generate_military_pdf(
+    records, component=None, *, health_registry=False, traffic_registry=False,
+    component_traffic_registry=False,
+):
+    traffic_registry = traffic_registry or component_traffic_registry
     health_registry = health_registry or traffic_registry
     grouped = {name: [] for name in MILITARY_COMPONENTS}
     for record in records:
@@ -395,15 +399,15 @@ def generate_military_pdf(records, component=None, *, health_registry=False, tra
                         pymupdf.Rect(36, 8, 924, 96), banner, 0,
                         clip=pymupdf.Rect(0, 0, 960, 95),
                     )
-                _text(
-                    page, pymupdf.Rect(28, 104, 932, 135),
-                    "Militares atendidos por accidentes de Tránsito"
-                    if traffic_registry else (
-                        "Militares Fallecidos en Centros de Salud"
-                        if health_registry else f"Registro de Militares Fallecidos en el Componente {name}"
-                    ),
-                    16, True,
-                )
+                if component_traffic_registry:
+                    title = "Militares Involucrados en Accidentes de Tránsito"
+                elif traffic_registry:
+                    title = "Militares atendidos por accidentes de Tránsito"
+                elif health_registry:
+                    title = "Militares Fallecidos en Centros de Salud"
+                else:
+                    title = f"Registro de Militares Fallecidos en el Componente {name}"
+                _text(page, pymupdf.Rect(28, 104, 932, 135), title, 16, True)
                 x, y = left, 145
                 for header, width in zip(headers, widths):
                     _cell(page, x, y, width, 31, header, bold=True, size=7)

@@ -67,14 +67,38 @@ class StoreTests(unittest.TestCase):
         self.store.add_traffic_record(self.center, **fields)
         with self.store.connect() as connection:
             path = connection.execute("PRAGMA database_list").fetchone()["file"]
+            connection.execute("ALTER TABLE traffic_records DROP COLUMN attention_center")
         reopened = Store(Path(path))
         rows = reopened.traffic_records(self.center)
         self.assertEqual(len(rows), 1)
         self.assertEqual(rows[0]["age"], 26)
         self.assertEqual(rows[0]["patient_condition"], "Fallecido")
         self.assertEqual(rows[0]["center_id"], self.north)
+        self.assertEqual(rows[0]["center_name"], "Centro Norte")
         self.assertEqual(reopened.military_records(self.admin, account_type="health"), [])
         self.assertEqual(reopened.military_records(self.admin), [])
+        component_fields = {**fields, "attention_center": "hospital publico de prueba"}
+        for token in (self.center, self.admin):
+            with self.assertRaises(AccessError):
+                reopened.add_traffic_record(token, **component_fields, account_type="military")
+        for value in ("", "   ", "X" * 161):
+            with self.subTest(center=value), self.assertRaises(InventoryError):
+                reopened.add_traffic_record(
+                    military, **{**component_fields, "attention_center": value}, account_type="military",
+                )
+        with self.assertRaises(AccessError):
+            reopened.traffic_records(self.center, account_type="military")
+        reopened.add_traffic_record(military, **component_fields, account_type="military")
+        reopened = Store(Path(path))
+        component_rows = reopened.traffic_records(military, account_type="military")
+        self.assertEqual(len(component_rows), 1)
+        self.assertEqual(component_rows[0]["component"], "Guardia Nacional Bolivariana")
+        self.assertEqual(component_rows[0]["center_name"], "HOSPITAL PUBLICO DE PRUEBA")
+        self.assertEqual(reopened.traffic_records(self.admin, account_type="military"), component_rows)
+        self.assertEqual(reopened.traffic_records(self.center), rows)
+        reopened.create_military_account(self.admin, "Ejército Bolivariano", "ejercito", TEMPORARY)
+        other = reopened.login("ejercito", TEMPORARY)
+        self.assertEqual(reopened.traffic_records(other, account_type="military"), [])
 
     def test_report_snapshot_batches_tables_for_all_34_centers(self):
         with self.store.transaction() as connection:

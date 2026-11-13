@@ -45,7 +45,8 @@ mostrar el texto completo.
   Los centros, usuarios, inventarios y reportes existentes se conservan.
 - Administración también puede crear cuentas para las cinco instituciones
   militares. Estas cuentas solo ingresan y consultan sus propios registros en
-  **Registro de Militares Fallecidos**; no acceden al inventario ni a los
+  **Registro de Militares Fallecidos** y **Militares Involucrados en Accidentes
+  de Tránsito**; no acceden al inventario ni a los
   informes de centros. Administración consulta el consolidado y genera el PDF.
 - Las cargas las realiza cada centro de salud, que consulta y actualiza
   únicamente sus registros. Su pantalla muestra el encabezado de sala situacional
@@ -318,9 +319,22 @@ letra institucional. Estos registros no se mezclan con los de fallecidos:
 seleccionar **Fallecido** no crea automáticamente un registro de fallecimiento.
 
 Ambos registros se encuentran dentro de **Registros de Pacientes Militares**,
-disponible en el menú del centro y en administración. El botón **Regresar** de
-cada registro vuelve a ese menú; el del menú agrupado vuelve al inventario del
-centro o a los informes de administración, según la cuenta.
+disponible en el menú del centro. Administración dispone de **Registros de
+Militares**, que reúne los cuatro reportes: militares fallecidos (componentes),
+fallecidos en centros de salud, atendidos en centros por accidentes de tránsito
+e involucrados en accidentes de tránsito (componentes). El botón **Regresar**
+de cada reporte vuelve al menú correspondiente; el del menú agrupado vuelve al
+inventario del centro o a los informes de administración, según la cuenta.
+
+**Militares Involucrados en Accidentes de Tránsito** solo permite ingresar datos
+a cuentas de componentes. Conserva los campos y las listas del registro de
+accidentes de los centros, pero el **centro de salud de atención** se escribe
+manualmente (obligatorio, en mayúsculas), para incluir centros públicos externos.
+El componente se asigna desde la cuenta y no puede alterarse en el formulario.
+Cada componente consulta únicamente sus registros, sin editarlos; administración
+consulta y descarga su consolidado, con filtros por componente, mes/año de
+atención, REDI y tipo de accidente. Estos datos se mantienen separados de los
+accidentes registrados por centros y de los registros de fallecidos.
 
 Al ingresar a cualquiera de estos dos registros, los centros ven únicamente el
 formulario de ingreso y sus registros guardados, sin buscador ni controles de

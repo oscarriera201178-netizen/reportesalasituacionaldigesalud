@@ -373,9 +373,14 @@ class Store:
                     traffic_role TEXT NOT NULL,
                     redi TEXT NOT NULL,
                     zodi TEXT NOT NULL,
-                    created_at REAL NOT NULL
+                    created_at REAL NOT NULL,
+                    attention_center TEXT NOT NULL DEFAULT ''
                 );
             """)
+            if "attention_center" not in connection.table_columns("traffic_records"):
+                connection.execute(
+                    "ALTER TABLE traffic_records ADD COLUMN attention_center TEXT NOT NULL DEFAULT ''",
+                )
             columns = set(connection.table_columns("centers"))
             if "assigned_username" not in columns:
                 kind = "CITEXT" if self.database_url else "TEXT"
@@ -834,17 +839,24 @@ class Store:
                 ),
             )
 
-    def traffic_records(self, token: str) -> list[dict]:
+    def traffic_records(self, token: str, *, account_type: str = "health") -> list[dict]:
+        if account_type not in ("health", "military"):
+            raise InventoryError("Tipo de institución no válido.")
         with self.transaction() as connection:
             user = self._actor(connection, token)
-            parameters = ()
-            where = " WHERE c.account_type='health'"
+            parameters = (account_type,)
+            where = " WHERE c.account_type=?"
             if user["role"] != "admin":
-                self._authorize_center(connection, token, user["center_id"])
+                center = connection.execute(
+                    "SELECT account_type FROM centers WHERE id=?", (user["center_id"],),
+                ).fetchone()
+                if not center or center["account_type"] != account_type:
+                    raise AccessError("No tienes acceso a los registros de estas instituciones.")
                 where += " AND r.center_id=?"
-                parameters = (user["center_id"],)
+                parameters += (user["center_id"],)
             records = [dict(row) for row in connection.execute(
-                "SELECT r.*,c.name AS center_name FROM traffic_records r "
+                "SELECT r.*,CASE WHEN c.account_type='health' THEN c.name "
+                "ELSE r.attention_center END AS center_name FROM traffic_records r "
                 "JOIN centers c ON c.id=r.center_id"
                 f"{where} ORDER BY r.attention_date DESC,r.id DESC", parameters,
             )]
@@ -860,14 +872,16 @@ class Store:
         self, token: str, *, grade: str, full_name: str, cedula: str,
         birth_date: str, attention_date: str, accident_type: str,
         patient_condition: str, traffic_role: str, redi: str, zodi: str,
-        unit: str, component: str,
+        unit: str, component: str = "", attention_center: str = "",
+        account_type: str = "health",
     ) -> None:
+        if account_type not in ("health", "military"):
+            raise InventoryError("Tipo de institución no válido.")
         patient = _military_patient_fields(grade, full_name, cedula, birth_date, redi, zodi, unit)
         attention_date = _iso_date(attention_date, "Fecha de atención")
         if attention_date < patient["birth_date"]:
             raise InventoryError("La fecha de atención no puede ser anterior a la fecha de nacimiento.")
         for value, options, label in (
-            (component, MILITARY_COMPONENTS, "componente"),
             (accident_type, TRAFFIC_TYPES, "tipo de accidente"),
             (patient_condition, TRAFFIC_CONDITIONS, "condición"),
             (traffic_role, TRAFFIC_ROLES, "participación"),
@@ -877,17 +891,28 @@ class Store:
         with self.transaction() as connection:
             user = self._actor(connection, token)
             if user["role"] != "center":
-                raise AccessError("Solo un centro de salud puede ingresar atenciones.")
-            self._authorize_center(connection, token, user["center_id"])
+                raise AccessError("Solo una cuenta de institución puede ingresar registros.")
+            center = connection.execute(
+                "SELECT name,account_type FROM centers WHERE id=?", (user["center_id"],),
+            ).fetchone()
+            if not center or center["account_type"] != account_type:
+                raise AccessError("No tienes permiso para ingresar estos registros.")
+            if account_type == "military":
+                component = center["name"]
+                attention_center = _text(attention_center, "Centro de salud de atención", 160).upper()
+            else:
+                if component not in MILITARY_COMPONENTS:
+                    raise InventoryError("Selecciona el componente del militar.")
+                attention_center = ""
             connection.execute(
                 "INSERT INTO traffic_records(center_id,full_name,grade,cedula,birth_date,"
                 "component,unit,attention_date,accident_type,patient_condition,traffic_role,"
-                "redi,zodi,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "redi,zodi,created_at,attention_center) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     user["center_id"], patient["full_name"], patient["grade"], patient["cedula"],
                     patient["birth_date"], component, patient["unit"], attention_date,
                     accident_type, patient_condition, traffic_role, patient["redi"],
-                    patient["zodi"], time.time(),
+                    patient["zodi"], time.time(), attention_center,
                 ),
             )
 

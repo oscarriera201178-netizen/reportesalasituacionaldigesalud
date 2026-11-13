@@ -4,7 +4,7 @@
 <div class="admin-nav">
   <a class="button button-muted" href="{{ url_for('home') }}">Informes</a>
   <a class="button button-primary" href="{{ url_for('accounts') }}">Cuentas de centros</a>
-  <a class="button button-muted" href="{{ url_for('military_report') }}">Registro de Militares Fallecidos</a>
+  <a class="button button-muted" href="{{ url_for('military_records_menu') }}">Registros de Militares</a>
 </div>
 <section class="panel">
   <h1>Cuentas de centros</h1>
@@ -24,7 +24,7 @@
 {% endif %}
 {% if available_components %}
 <details class="panel"><summary>Crear cuenta de institución militar</summary>
-  <p>Estas cuentas solo podrán consultar e ingresar registros propios en “Registro de Militares Fallecidos”.</p>
+  <p>Estas cuentas solo podrán consultar e ingresar registros propios de militares fallecidos y militares involucrados en accidentes de tránsito.</p>
   <form method="post" class="form-grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}"><input type="hidden" name="action" value="create_military_account">
     <label>Institución<select name="component" required>{% for component in available_components %}<option value="{{ component }}">{{ component }}</option>{% endfor %}</select></label>

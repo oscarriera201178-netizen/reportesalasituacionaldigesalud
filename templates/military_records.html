@@ -1,8 +1,10 @@
 {% extends "base.html" %}
-{% set registry_title = "Militares atendidos por accidentes de Tránsito" if traffic_registry else ("Militares Fallecidos en Centros de Salud" if health_registry else "Registro de Militares Fallecidos") %}
+{% set registry_title = ("Militares atendidos por accidentes de Tránsito" if health_registry else "Militares Involucrados en Accidentes de Tránsito") if traffic_registry else ("Militares Fallecidos en Centros de Salud" if health_registry else "Registro de Militares Fallecidos") %}
 {% block title %}{{ registry_title }} · DIGESALUD-MPPD{% endblock %}
 {% block content %}
-{% if health_registry %}
+{% if current_actor.role == "admin" %}
+  <a class="button button-muted" href="{{ url_for('military_records_menu') }}">Regresar</a>
+{% elif health_registry %}
   <a class="button button-muted" href="{{ url_for('military_patient_records') }}">Regresar</a>
 {% endif %}
 {% if not health_registry or current_actor.role == "admin" %}
@@ -12,6 +14,9 @@
     <a class="button button-muted" href="{{ url_for('accounts') }}">Cuentas de centros</a>
   {% endif %}
   <a class="button button-primary" href="{{ url_for(report_endpoint) }}">{{ registry_title }}</a>
+  {% if current_actor.role != "admin" %}
+    <a class="button button-muted" href="{{ url_for('military_report' if traffic_registry else 'component_traffic_report') }}">{{ "Militares fallecidos" if traffic_registry else "Militares Involucrados en Accidentes de Tránsito" }}</a>
+  {% endif %}
 </div>
 <section class="panel">
   <h1>{{ registry_title }}</h1>
@@ -20,7 +25,7 @@
   {% elif current_actor.role == "admin" %}
     <p>Consulta consolidada de las cinco instituciones militares.</p>
   {% else %}
-    <p>Registro de Militares Fallecidos en el Componente <strong>{{ current_actor.center_name }}</strong>. Solo puedes consultar los registros de tu institución.</p>
+    <p>{{ registry_title }} en el Componente <strong>{{ current_actor.center_name }}</strong>. Solo puedes consultar los registros de tu institución.</p>
   {% endif %}
   <form method="get" action="{{ url_for(report_endpoint) }}" class="filter-grid">
     {% if current_actor.role == "admin" or health_registry %}
@@ -83,6 +88,9 @@
         {% for component in military_components %}<option value="{{ component }}">{{ component }}</option>{% endfor %}
       </select></label>
     {% endif %}
+    {% if traffic_registry and not health_registry %}
+      <label>CENTRO DE SALUD DE ATENCIÓN<input class="uppercase-field" name="attention_center" maxlength="160" required></label>
+    {% endif %}
     <label>GDO/JQUIA<select name="grade" required>
       <option value="">Selecciona un grado o jerarquía</option>
       {% for grade in military_grades %}<option value="{{ grade }}">{{ grade }}</option>{% endfor %}
@@ -119,9 +127,9 @@
 <section class="panel">
   <h2>Registros ({{ records|length }})</h2>
   {% if records %}
-    {% set groups = [("", records)] if health_registry else records|groupby("component") %}
+    {% set groups = [("", records)] if health_registry or traffic_registry else records|groupby("component") %}
     {% for component, component_records in groups %}
-      {% if current_actor.role == "admin" and not health_registry %}<h3>Componente {{ component }}</h3>{% endif %}
+      {% if current_actor.role == "admin" and not health_registry and not traffic_registry %}<h3>Componente {{ component }}</h3>{% endif %}
       <div class="table-wrap"><table>
         <thead><tr>
           <th>NRO.</th><th>GDO/JQUIA</th><th>NOMBRE Y APELLIDOS</th>
@@ -129,7 +137,7 @@
           <th>{{ "FECHA DE ATENCIÓN" if traffic_registry else "FECHA DE LA MUERTE" }}</th><th>{{ "TIPO DE ACCIDENTE" if traffic_registry else "CAUSAS DE LA MUERTE" }}</th>
           {% if traffic_registry %}<th>CONDICIÓN</th><th>PARTICIPACIÓN</th>{% endif %}
           <th>REDI</th><th>ZODI</th><th>UNIDAD</th>
-          {% if health_registry %}<th>COMPONENTE</th><th>CENTRO DE SALUD</th>{% endif %}
+          {% if health_registry or traffic_registry %}<th>COMPONENTE</th><th>CENTRO DE SALUD</th>{% endif %}
         </tr></thead>
         <tbody>{% for record in component_records %}<tr>
           <td>{{ loop.index }}</td><td>{{ record.grade }}</td><td>{{ record.full_name }}</td>
@@ -137,7 +145,7 @@
           <td>{{ record.attention_date if traffic_registry else record.death_date }}</td><td>{{ record.accident_type if traffic_registry else record.cause }}</td>
           {% if traffic_registry %}<td>{{ record.patient_condition }}</td><td>{{ record.traffic_role }}</td>{% endif %}
           <td>{{ record.redi }}</td><td>{{ record.zodi }}</td><td>{{ record.unit }}</td>
-          {% if health_registry %}<td>{{ record.component }}</td><td>{{ record.center_name }}</td>{% endif %}
+          {% if health_registry or traffic_registry %}<td>{{ record.component }}</td><td>{{ record.center_name }}</td>{% endif %}
         </tr>{% endfor %}</tbody>
       </table></div>
     {% endfor %}

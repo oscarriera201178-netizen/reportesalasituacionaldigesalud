@@ -49,10 +49,14 @@ class MilitaryReportLayoutTests(unittest.TestCase):
             attention_date="2026-10-15", accident_type="Bicicleta",
             patient_condition="Politraumatismo craneoencefálico", traffic_role="Pasajero",
         )
-        for health_registry, traffic_registry in ((False, False), (True, False), (True, True)):
-            with self.subTest(health_registry=health_registry, traffic_registry=traffic_registry), pymupdf.open(
+        for health_registry, traffic_registry, component_traffic in (
+            (False, False, False), (True, False, False), (True, True, False), (False, True, True),
+        ):
+            with self.subTest(health_registry=health_registry, traffic_registry=traffic_registry,
+                              component_traffic=component_traffic), pymupdf.open(
                 stream=generate_military_pdf(
                     [record] * 16, health_registry=health_registry, traffic_registry=traffic_registry,
+                    component_traffic_registry=component_traffic,
                 ),
                 filetype="pdf",
             ) as document:
@@ -72,7 +76,7 @@ class MilitaryReportLayoutTests(unittest.TestCase):
                 if traffic_registry:
                     keys = ("full_name", "accident_type", "patient_condition", "traffic_role",
                             "redi", "zodi", "unit")
-                if health_registry:
+                if health_registry or component_traffic:
                     keys += ("center_name", "component")
                 for key in keys:
                     expected = " ".join(record[key].split())
