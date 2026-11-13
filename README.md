@@ -425,6 +425,8 @@ Nunca uses credenciales ni datos de producción para estas pruebas.
 Esta versión está preparada para Vercel. El archivo `pyproject.toml` define
 `webapp:app` como punto de entrada, `.python-version` selecciona Python 3.12
 y `public/` contiene los recursos estáticos que Vercel publica por CDN.
+Las dependencias de ejecución se declaran tanto en `pyproject.toml` como en
+`requirements.txt`; mantén ambas listas sincronizadas para Vercel y desarrollo.
 
 1. Importa el repositorio en Vercel.
 2. Desde **Storage/Marketplace**, crea una base PostgreSQL nueva y conecta la

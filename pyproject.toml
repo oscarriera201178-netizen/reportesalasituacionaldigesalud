@@ -1,2 +1,12 @@
+[project]
+name = "inventarios-centros-salud"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "flask>=3.0,<4",
+    "pymupdf>=1.24,<3",
+    "psycopg[binary]>=3.2,<4",
+]
+
 [tool.vercel]
 entrypoint = "webapp:app"

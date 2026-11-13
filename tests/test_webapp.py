@@ -1,5 +1,6 @@
 import re
 import tempfile
+import tomllib
 import unittest
 import os
 from pathlib import Path
@@ -11,6 +12,14 @@ from webapp import create_app
 
 ADMIN_PASSWORD = "Testing-admin-password-123"
 CENTER_PASSWORD = "Testing-center-password-456"
+
+
+class VercelConfigurationTests(unittest.TestCase):
+    def test_project_dependencies_match_runtime_requirements(self):
+        root = Path(__file__).resolve().parent.parent
+        project = tomllib.loads((root / "pyproject.toml").read_text())
+        requirements = (root / "requirements.txt").read_text().splitlines()
+        self.assertEqual(set(project["project"]["dependencies"]), set(requirements))
 
 
 class HtmlApplicationTests(unittest.TestCase):
