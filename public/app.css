@@ -21,7 +21,9 @@ a { color: inherit; }
 h1, h2, h3 { line-height: 1.2; }
 h1 { margin-top: 0; font-size: clamp(1.35rem, 3vw, 2rem); }
 h2 { font-size: 1.25rem; }
-.login-card { max-width: 460px; margin: 8vh auto; }
+.login-layout { display: grid; justify-items: center; gap: .75rem; width: min(460px, 100%); margin: 8vh auto; }
+.login-shield { display: block; width: clamp(110px, 24vw, 150px); height: auto; object-fit: contain; }
+.login-card { width: 100%; max-width: 460px; margin: 0; }
 .narrow { max-width: 580px; margin-inline: auto; }
 .form-stack { display: grid; gap: 1rem; }
 .form-grid, .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; align-items: end; }

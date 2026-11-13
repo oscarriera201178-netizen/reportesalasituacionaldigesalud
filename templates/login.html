@@ -1,22 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Acceso · DIGESALUD-MPPD{% endblock %}
 {% block content %}
-<section class="login-card">
-  <h1>Acceso al inventario</h1>
-  {% if initialized %}
-    <p>Ingresa con las credenciales asignadas por DIGESALUD-MPPD.</p>
-    <form method="post" class="form-stack">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <label>Usuario
-        <input name="username" autocomplete="username" required maxlength="80">
-      </label>
-      <label>Contraseña
-        <input name="password" type="password" autocomplete="current-password" required maxlength="128">
-      </label>
-      <button class="button button-primary" type="submit">Ingresar</button>
-    </form>
-  {% else %}
-    <p class="notice notice-info">El responsable del servidor debe configurar la cuenta administradora antes de abrir el portal.</p>
-  {% endif %}
-</section>
+<div class="login-layout">
+  <img class="login-shield" src="{{ url_for('shield') }}" alt="Escudo institucional">
+  <section class="login-card">
+    <h1>Acceso al inventario</h1>
+    {% if initialized %}
+      <p>Ingresa con las credenciales asignadas por DIGESALUD-MPPD.</p>
+      <form method="post" class="form-stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <label>Usuario
+          <input name="username" autocomplete="username" required maxlength="80">
+        </label>
+        <label>Contraseña
+          <input name="password" type="password" autocomplete="current-password" required maxlength="128">
+        </label>
+        <button class="button button-primary" type="submit">Ingresar</button>
+      </form>
+    {% else %}
+      <p class="notice notice-info">El responsable del servidor debe configurar la cuenta administradora antes de abrir el portal.</p>
+    {% endif %}
+  </section>
+</div>
 {% endblock %}

@@ -65,6 +65,13 @@ class HtmlApplicationTests(unittest.TestCase):
             rb'name="csrf_token" value="([^"]+)"', page.data,
         ).group(1).decode()
 
+    def test_login_displays_shield_above_login_card(self):
+        response = self.client.get("/login")
+        html = response.data.decode()
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('src="/escudo.png"', html)
+        self.assertLess(html.index('class="login-shield"'), html.index('class="login-card"'))
+
     def test_military_patient_menu_groups_registries_and_returns_to_previous_menu(self):
         response = self.client.get("/health/patients")
         self.assertEqual(response.status_code, 302)
