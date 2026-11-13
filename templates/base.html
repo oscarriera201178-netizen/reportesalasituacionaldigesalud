@@ -15,7 +15,7 @@
     </a>
     {% if current_actor %}
       <div class="user-bar">
-        <span>{{ current_actor.username }} · {{ "Administrador" if current_actor.role == "admin" else "Responsable de centro" }}</span>
+        <span>{{ current_actor.username }} · {% if current_actor.role == "admin" %}Administrador{% elif current_actor.account_type == "military" %}Cuenta militar{% else %}Responsable de centro{% endif %}</span>
         <form method="post" action="{{ url_for('logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
           <button class="button button-muted" type="submit">Cerrar sesión</button>

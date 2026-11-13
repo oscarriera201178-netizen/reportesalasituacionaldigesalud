@@ -12,7 +12,7 @@ TABLES = (
     "centers", "users", "sessions", "quantities", "facilities",
     "facility_counts", "migrated_facilities", "section_loads",
     "vehicle_history", "special_laboratories", "equipment_types",
-    "equipment_counts", "plant_counts", "equipment",
+    "equipment_counts", "plant_counts", "equipment", "military_records",
 )
 
 

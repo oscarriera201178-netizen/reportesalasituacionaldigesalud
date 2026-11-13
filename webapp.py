@@ -14,10 +14,13 @@ from flask import (
     send_from_directory, session, url_for,
 )
 
-from report import SUMMARY_CATEGORIES, generate_pdf, report_data, report_types
+from report import (
+    SUMMARY_CATEGORIES, generate_military_pdf, generate_pdf, report_data, report_types,
+)
 from database import DATABASE_ERRORS
 from store import (
-    AccessError, BED_TYPES, InventoryError, INVENTORY_QUANTITIES,
+    AccessError, BED_TYPES, InventoryError, INVENTORY_QUANTITIES, MILITARY_CAUSES,
+    MILITARY_COMPONENTS, MILITARY_GRADES, MILITARY_REDI,
     REPORT_LOADED, REPORT_SECTIONS, REPORT_TIMEZONE, load_center_catalog,
     SPECIAL_EQUIPMENT_TYPES, STATES, Store, VEHICLE_GROUPS,
     weekly_status,
@@ -220,6 +223,8 @@ def create_app(store=None, *, secret_key=None):
             return redirect(url_for("login"))
         if current_actor["role"] == "admin":
             return render_admin(get_store(), token())
+        if current_actor["account_type"] == "military":
+            return redirect(url_for("military_report"))
         centers = get_store().centers(token())
         if not centers:
             abort(403, "La cuenta no tiene un centro asignado.")
@@ -301,8 +306,15 @@ def create_app(store=None, *, secret_key=None):
             center for center in store_obj.centers(token())
             if center["id"] not in accounted
         ]
+        accounted_components = {
+            user["center"] for user in users if user["account_type"] == "military"
+        }
         return render_template(
             "accounts.html", users=users, available_centers=available_centers,
+            available_components=[
+                component for component in MILITARY_COMPONENTS
+                if component not in accounted_components
+            ],
         )
 
     @app.post("/admin/accounts")
@@ -319,6 +331,15 @@ def create_app(store=None, *, secret_key=None):
                 request.form.get("username", ""), password,
             )
             flash("Centro y cuenta creados. Entrega las credenciales por un canal privado.", "success")
+        elif action == "create_military_account":
+            password = request.form.get("password", "")
+            if password != request.form.get("confirmation", ""):
+                raise InventoryError("Las contraseñas no coinciden.")
+            store_obj.create_military_account(
+                token(), request.form.get("component", ""),
+                request.form.get("username", ""), password,
+            )
+            flash("Cuenta militar creada. Entrega las credenciales por un canal privado.", "success")
         elif action == "create_account":
             password = request.form.get("password", "")
             if password != request.form.get("confirmation", ""):
@@ -341,6 +362,8 @@ def create_app(store=None, *, secret_key=None):
             if not user:
                 abort(404)
             if action == "update":
+                if user["account_type"] == "military":
+                    abort(403)
                 store_obj.update_center(
                     token(), user["center_id"], request.form.get("name", ""),
                     request.form.get("location", ""), request.form.get("username", ""),
@@ -359,6 +382,55 @@ def create_app(store=None, *, secret_key=None):
         else:
             abort(400, "Acción no válida.")
         return redirect(url_for("accounts"))
+
+    @app.get("/military")
+    def military_report():
+        current_actor = require_role()
+        if not isinstance(current_actor, dict):
+            return current_actor or redirect(url_for("login"))
+        if current_actor["role"] != "admin" and current_actor["account_type"] != "military":
+            abort(403)
+        records = get_store().military_records(token())
+        return render_template(
+            "military_records.html", records=records,
+            military_grades=MILITARY_GRADES, military_causes=MILITARY_CAUSES,
+            military_redi=MILITARY_REDI,
+        )
+
+    @app.post("/military")
+    def add_military_record():
+        current_actor = require_role("center")
+        if not isinstance(current_actor, dict):
+            return current_actor or redirect(url_for("login"))
+        if current_actor["account_type"] != "military":
+            abort(403)
+        get_store().add_military_record(
+            token(), request.form.get("grade", ""), request.form.get("full_name", ""),
+            request.form.get("cedula", ""), request.form.get("birth_date", ""),
+            request.form.get("death_date", ""), request.form.get("cause", ""),
+            request.form.get("redi", ""), request.form.get("zodi", ""),
+            request.form.get("unit", ""),
+        )
+        flash("Registro ingresado.", "success")
+        return redirect(url_for("military_report"))
+
+    @app.get("/military/report.pdf")
+    def download_military_report():
+        current_actor = require_role()
+        if not isinstance(current_actor, dict):
+            return current_actor or redirect(url_for("login"))
+        if current_actor["role"] != "admin" and current_actor["account_type"] != "military":
+            abort(403)
+        records = get_store().military_records(token())
+        pdf = generate_military_pdf(
+            records,
+            component=None if current_actor["role"] == "admin" else current_actor["center_name"],
+        )
+        return send_file(
+            io.BytesIO(pdf), as_attachment=True,
+            download_name="Registro_de_Militares_Fallecidos.pdf",
+            mimetype="application/pdf",
+        )
 
     @app.get("/backup")
     @admin_required

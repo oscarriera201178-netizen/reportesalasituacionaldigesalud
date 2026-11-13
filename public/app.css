@@ -26,8 +26,9 @@ h2 { font-size: 1.25rem; }
 .form-stack { display: grid; gap: 1rem; }
 .form-grid, .filter-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; align-items: end; }
 label { display: grid; gap: .35rem; font-weight: 650; }
-input, select { font: inherit; min-width: 0; padding: .65rem .7rem; border: 1px solid #aebdb9; border-radius: .4rem; background: white; color: var(--ink); }
-input:focus, select:focus { outline: 3px solid #147d7833; border-color: var(--green); }
+input, select, textarea { font: inherit; min-width: 0; padding: .65rem .7rem; border: 1px solid #aebdb9; border-radius: .4rem; background: white; color: var(--ink); }
+input:focus, select:focus, textarea:focus { outline: 3px solid #147d7833; border-color: var(--green); }
+.uppercase-field { text-transform: uppercase; }
 .button { display: inline-flex; align-items: center; justify-content: center; min-height: 42px; border: 0; border-radius: .45rem; padding: .65rem .9rem; font: inherit; font-weight: 750; text-align: center; text-decoration: none; text-transform: uppercase; cursor: pointer; }
 .button-primary { background: var(--green); color: white; }
 .button-primary:hover { background: var(--green-dark); }

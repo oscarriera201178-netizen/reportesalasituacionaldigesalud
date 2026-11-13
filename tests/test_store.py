@@ -9,7 +9,8 @@ from database import SQLiteConnection
 
 from store import (
     AMBULANCE_TYPES, BED_TYPES, AccessError, IDLE_SECONDS, InventoryError, REPORT_LOADED, REPORT_PENDING,
-    REPORT_TIMEZONE, SESSION_SECONDS, Store, load_center_catalog, weekly_status,
+    MILITARY_COMPONENTS, REPORT_TIMEZONE, SESSION_SECONDS, Store, load_center_catalog,
+    weekly_status,
 )
 
 
@@ -159,6 +160,79 @@ class StoreTests(unittest.TestCase):
             with self.subTest(operation=operation), self.assertRaises(AccessError):
                 operation()
         self.assertTrue(all(not rows for rows in self.store.inventory(self.admin, self.south).values()))
+
+    def test_military_accounts_are_separate_and_only_see_their_own_records(self):
+        self.store.create_military_account(
+            self.admin, MILITARY_COMPONENTS[0], "guardia", TEMPORARY,
+        )
+        self.store.create_military_account(
+            self.admin, MILITARY_COMPONENTS[1], "ejercito", TEMPORARY,
+        )
+        users = self.store.users(self.admin)
+        first_user = next(user for user in users if user["username"] == "guardia")
+        second_user = next(user for user in users if user["username"] == "ejercito")
+        first = self.store.login("guardia", TEMPORARY)
+        second = self.store.login("ejercito", TEMPORARY)
+        self.store.add_military_record(
+            first, "TTE", "Persona Uno", "V-12345678", "2000-10-28",
+            "2026-10-28", "Muerte natural", "REDI Capital", "ZODI A", "Unidad A",
+        )
+        self.store.add_military_record(
+            second, "TTE", "Persona Dos", "V-87654321", "2000-10-29",
+            "2026-10-29", "Muerte natural", "REDI Central", "ZODI B", "Unidad B",
+        )
+
+        self.assertEqual(self.store.centers(first), [])
+        self.assertEqual(
+            [row["full_name"] for row in self.store.military_records(first)],
+            ["PERSONA UNO"],
+        )
+        self.assertEqual(
+            [row["full_name"] for row in self.store.military_records(second)],
+            ["PERSONA DOS"],
+        )
+        self.assertEqual(len(self.store.military_records(self.admin)), 2)
+        self.assertEqual(
+            self.store.military_records(self.admin)[0]["component"],
+            MILITARY_COMPONENTS[1],
+        )
+        self.assertEqual(self.store.military_records(first)[0]["age"], 26)
+        first_record = self.store.military_records(first)[0]
+        self.assertEqual(first_record["full_name"], "PERSONA UNO")
+        self.assertEqual(first_record["zodi"], "ZODI A")
+        self.assertEqual(first_record["unit"], "UNIDAD A")
+        with self.assertRaises(AccessError):
+            self.store.military_records(self.center)
+        with self.assertRaises(AccessError):
+            self.store.inventory(first, self.north)
+        with self.assertRaises(AccessError):
+            self.store.report_snapshot(first)
+        with self.assertRaises(InventoryError):
+            self.store.create_military_account(
+                self.admin, MILITARY_COMPONENTS[0], "otro", TEMPORARY,
+            )
+        with self.assertRaises(InventoryError):
+            self.store.add_military_record(
+                first, "TTE", "Nombre", "V-1", "2000-01-01",
+                "1999-12-31", "Muerte natural", "REDI Capital", "ZODI", "Unidad",
+            )
+        valid_record = [
+            "TTE", "Nombre", "V-1", "2000-01-01", "2020-01-01",
+            "Muerte natural", "REDI Capital", "ZODI", "Unidad",
+        ]
+        for field_index, invalid_value in ((0, "XX"), (5, "Otra causa"), (6, "REDI Norte")):
+            invalid_record = valid_record.copy()
+            invalid_record[field_index] = invalid_value
+            with self.subTest(field=field_index), self.assertRaises(InventoryError):
+                self.store.add_military_record(first, *invalid_record)
+        self.assertNotIn(
+            first_user["center_id"],
+            {center["id"] for center, _ in self.store.report_snapshot(self.admin)},
+        )
+        self.assertNotIn(
+            second_user["center_id"],
+            {row["N°"] for row in self.store.summary(self.admin)},
+        )
 
     def test_inventory_creation_update_and_persistence(self):
         self.store.save_quantity(self.center, self.north, "Camas", "UCI", 10, 2)

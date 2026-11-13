@@ -42,6 +42,27 @@ REPORT_SECTIONS = (
     "Camas", "Vehículos", "Banco de sangre", "Laboratorio", "Quirófano",
     "Equipos médicos especiales", "Plantas eléctricas",
 )
+MILITARY_COMPONENTS = (
+    "Guardia Nacional Bolivariana",
+    "Ejército Bolivariano",
+    "Armada Bolivariana",
+    "Aviación Militar Bolivariana",
+    "Milicia Bolivariana",
+)
+MILITARY_GRADES = (
+    "GJ", "MG", "GD", "GB", "CNEL", "TCNEL", "MAY", "CAP", "PTTE", "TTE",
+    "SS", "SA", "SM1", "SM2", "SM3", "S1", "S2", "ALUMNO", "CADETE",
+    "ALISTADO", "SOLDADO",
+)
+MILITARY_CAUSES = (
+    "Muerte natural", "Accidente de tránsito", "Suicidio", "Homicidio",
+    "Enfrentamiento", "Incidente por arma de fuego",
+)
+MILITARY_REDI = (
+    "REDI Capital", "REDI Central", "REDI Los Llanos", "REDI Los Andes",
+    "REDI Guayana", "REDI Occidental", "REDI Oriental",
+    "REDI Marítima e Insular",
+)
 FACILITY_CATEGORIES = ("Banco de sangre", "Laboratorio", "Quirófano")
 INVENTORY_QUANTITIES = {
     "Camas": BED_TYPES,
@@ -95,6 +116,17 @@ def _text(value: str, label: str, limit: int = 160, required: bool = True) -> st
     value = value.strip()
     if (required and not value) or len(value) > limit:
         raise InventoryError(f"{label}: completa el campo con hasta {limit} caracteres.")
+    return value
+
+
+def _iso_date(value: str, label: str) -> str:
+    value = _text(value, label, 10)
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as error:
+        raise InventoryError(f"{label}: selecciona una fecha válida.") from error
+    if parsed.isoformat() != value:
+        raise InventoryError(f"{label}: selecciona una fecha válida.")
     return value
 
 
@@ -175,7 +207,9 @@ class Store:
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL COLLATE NOCASE UNIQUE,
                     location TEXT NOT NULL DEFAULT '',
-                    assigned_username TEXT NOT NULL DEFAULT ''
+                    assigned_username TEXT NOT NULL DEFAULT '',
+                    account_type TEXT NOT NULL DEFAULT 'health'
+                        CHECK(account_type IN ('health', 'military'))
                 );
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY,
@@ -285,11 +319,46 @@ class Store:
                     state TEXT NOT NULL CHECK(state IN ('Operativo', 'Fuera de servicio')),
                     UNIQUE(center_id, code)
                 );
+                CREATE TABLE IF NOT EXISTS military_records (
+                    id INTEGER PRIMARY KEY,
+                    center_id INTEGER NOT NULL REFERENCES centers(id),
+                    full_name TEXT NOT NULL,
+                    grade TEXT NOT NULL,
+                    cedula TEXT NOT NULL DEFAULT '',
+                    birth_date TEXT NOT NULL DEFAULT '',
+                    component TEXT NOT NULL,
+                    unit TEXT NOT NULL,
+                    death_date TEXT NOT NULL,
+                    cause TEXT NOT NULL DEFAULT '',
+                    redi TEXT NOT NULL DEFAULT '',
+                    zodi TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL
+                );
             """)
             columns = set(connection.table_columns("centers"))
             if "assigned_username" not in columns:
                 kind = "CITEXT" if self.database_url else "TEXT"
                 connection.execute(f"ALTER TABLE centers ADD COLUMN assigned_username {kind} NOT NULL DEFAULT ''")
+            if "account_type" not in columns:
+                connection.execute(
+                    "ALTER TABLE centers ADD COLUMN account_type TEXT NOT NULL DEFAULT 'health'",
+                )
+            military_columns = set(connection.table_columns("military_records"))
+            for column, definition in (
+                ("cedula", "TEXT NOT NULL DEFAULT ''"),
+                ("birth_date", "TEXT NOT NULL DEFAULT ''"),
+                ("cause", "TEXT NOT NULL DEFAULT ''"),
+                ("redi", "TEXT NOT NULL DEFAULT ''"),
+                ("zodi", "TEXT NOT NULL DEFAULT ''"),
+            ):
+                if column not in military_columns:
+                    connection.execute(
+                        f"ALTER TABLE military_records ADD COLUMN {column} {definition}",
+                    )
+            if "observations" in military_columns:
+                connection.execute(
+                    "UPDATE military_records SET cause=observations WHERE cause=''",
+                )
             for column in ("submitted_at", "changed_at"):
                 if column not in columns:
                     kind = "DOUBLE PRECISION" if self.database_url else "REAL"
@@ -472,7 +541,20 @@ class Store:
     def identity(self, token: str) -> dict:
         with self.transaction() as connection:
             user = self._actor(connection, token, allow_password_change=True)
-            return {key: user[key] for key in ("id", "username", "role", "center_id", "must_change")}
+            account_type = None
+            center_name = None
+            if user["center_id"] is not None:
+                center = connection.execute(
+                    "SELECT name,account_type FROM centers WHERE id=?", (user["center_id"],),
+                ).fetchone()
+                if center:
+                    center_name = center["name"]
+                    account_type = center["account_type"]
+            return {
+                **{key: user[key] for key in ("id", "username", "role", "center_id", "must_change")},
+                "account_type": account_type,
+                "center_name": center_name,
+            }
 
     def logout(self, token: str) -> None:
         with self.connect() as connection:
@@ -503,9 +585,14 @@ class Store:
         with self.transaction() as connection:
             user = self._actor(connection, token)
             if user["role"] == "admin":
-                rows = connection.execute("SELECT * FROM centers ORDER BY id").fetchall()
+                rows = connection.execute(
+                    "SELECT * FROM centers WHERE account_type='health' ORDER BY id",
+                ).fetchall()
             else:
-                rows = connection.execute("SELECT * FROM centers WHERE id=?", (user["center_id"],)).fetchall()
+                rows = connection.execute(
+                    "SELECT * FROM centers WHERE id=? AND account_type='health'",
+                    (user["center_id"],),
+                ).fetchall()
             return [dict(row) for row in rows]
 
     def create_center(self, token: str, name: str, location: str, username: str, password: str) -> None:
@@ -523,11 +610,31 @@ class Store:
                 raise InventoryError("Ya existe un centro con ese nombre o usuario asignado.") from error
             self._create_user(connection, username, password, "center", center_id)
 
+    def create_military_account(
+        self, token: str, component: str, username: str, password: str,
+    ) -> None:
+        if component not in MILITARY_COMPONENTS:
+            raise InventoryError("Selecciona un componente militar válido.")
+        username = _username(username)
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            try:
+                center_id = connection.insert_id(
+                    "INSERT INTO centers(name,assigned_username,account_type) "
+                    "VALUES(?,?,'military')",
+                    (component, username),
+                )
+            except INTEGRITY_ERRORS as error:
+                raise InventoryError("Ese componente militar ya tiene cuenta o ya está registrado.") from error
+            self._create_user(connection, username, password, "center", center_id)
+
     def create_account(self, token: str, center_id: int, username: str, password: str) -> None:
         username = _username(username)
         with self.transaction() as connection:
             self._actor(connection, token, admin=True)
-            if not connection.execute("SELECT 1 FROM centers WHERE id=?", (center_id,)).fetchone():
+            if not connection.execute(
+                "SELECT 1 FROM centers WHERE id=? AND account_type='health'", (center_id,),
+            ).fetchone():
                 raise InventoryError("El centro seleccionado no existe.")
             self._create_user(connection, username, password, "center", center_id)
 
@@ -606,9 +713,84 @@ class Store:
         with self.transaction() as connection:
             self._actor(connection, token, admin=True)
             return [dict(row) for row in connection.execute(
-                "SELECT u.id,u.username,u.active,u.center_id,c.name AS center,c.location FROM users u "
+                "SELECT u.id,u.username,u.active,u.center_id,c.name AS center,c.location,"
+                "c.account_type FROM users u "
                 "JOIN centers c ON c.id=u.center_id ORDER BY c.id",
             )]
+
+    def military_records(self, token: str) -> list[dict]:
+        with self.transaction() as connection:
+            user = self._actor(connection, token)
+            parameters = ()
+            where = ""
+            if user["role"] != "admin":
+                center = connection.execute(
+                    "SELECT account_type FROM centers WHERE id=?", (user["center_id"],),
+                ).fetchone()
+                if user["role"] != "center" or not center or center["account_type"] != "military":
+                    raise AccessError("Este reporte solo está disponible para administración y cuentas militares.")
+                where = " WHERE r.center_id=?"
+                parameters = (user["center_id"],)
+            records = [dict(row) for row in connection.execute(
+                "SELECT r.id,r.center_id,c.name AS component,r.full_name,r.grade,r.cedula,"
+                "r.birth_date,r.unit,r.death_date,r.cause,r.redi,r.zodi,r.created_at "
+                "FROM military_records r JOIN centers c ON c.id=r.center_id"
+                f"{where} ORDER BY r.death_date DESC,r.id DESC",
+                parameters,
+            ).fetchall()]
+            for record in records:
+                try:
+                    born = datetime.strptime(record["birth_date"], "%Y-%m-%d").date()
+                    died = datetime.strptime(record["death_date"], "%Y-%m-%d").date()
+                except ValueError:
+                    record["age"] = ""
+                else:
+                    record["age"] = died.year - born.year - (
+                        (died.month, died.day) < (born.month, born.day)
+                    )
+            return records
+
+    def add_military_record(
+        self, token: str, grade: str, full_name: str, cedula: str,
+        birth_date: str, death_date: str, cause: str, redi: str,
+        zodi: str, unit: str,
+    ) -> None:
+        full_name = _text(full_name, "Nombre completo", 160).upper()
+        grade = _text(grade, "Grado", 10)
+        if grade not in MILITARY_GRADES:
+            raise InventoryError("Selecciona un grado o jerarquía válido.")
+        cedula = _text(cedula, "Cédula", 32)
+        birth_date = _iso_date(birth_date, "Fecha de nacimiento")
+        death_date = _iso_date(death_date, "Fecha de fallecimiento")
+        if death_date < birth_date:
+            raise InventoryError("La fecha de fallecimiento no puede ser anterior a la fecha de nacimiento.")
+        cause = _text(cause, "Causa de la muerte", 80)
+        if cause not in MILITARY_CAUSES:
+            raise InventoryError("Selecciona una causa de muerte válida.")
+        redi = _text(redi, "REDI", 80)
+        if redi not in MILITARY_REDI:
+            raise InventoryError("Selecciona una REDI válida.")
+        zodi = _text(zodi, "ZODI", 120).upper()
+        unit = _text(unit, "Unidad", 160).upper()
+        with self.transaction() as connection:
+            user = self._actor(connection, token)
+            if user["role"] != "center":
+                raise AccessError("Solo una cuenta militar puede ingresar registros.")
+            center = connection.execute(
+                "SELECT name,account_type FROM centers WHERE id=?", (user["center_id"],),
+            ).fetchone()
+            if not center or center["account_type"] != "military":
+                raise AccessError("Solo una cuenta militar puede ingresar registros.")
+            connection.execute(
+                "INSERT INTO military_records("
+                "center_id,full_name,grade,cedula,birth_date,component,unit,death_date,"
+                "cause,redi,zodi,created_at"
+                ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    user["center_id"], full_name, grade, cedula, birth_date,
+                    center["name"], unit, death_date, cause, redi, zodi, time.time(),
+                ),
+            )
 
     def summary(self, token: str) -> list[dict]:
         with self.transaction() as connection:
@@ -656,6 +838,7 @@ class Store:
                     SELECT center_id, SUM(operational + unavailable) AS total
                     FROM plant_counts GROUP BY center_id
                 ) p ON p.center_id=c.id
+                WHERE c.account_type='health'
                 ORDER BY c.id
             """)]
             for row in rows:
@@ -678,10 +861,17 @@ class Store:
 
     def _authorize_center(self, connection, token, center_id):
         user = self._actor(connection, token)
+        center = connection.execute(
+            "SELECT account_type FROM centers WHERE id=?", (center_id,),
+        ).fetchone()
+        if not center:
+            raise InventoryError("El centro seleccionado no existe.")
+        if center["account_type"] != "health":
+            raise AccessError("Esta cuenta no tiene acceso al inventario de centros de salud.")
         if user["role"] != "admin" and user["center_id"] != center_id:
             raise AccessError("No tienes permiso para acceder a otro centro.")
-        if not connection.execute("SELECT 1 FROM centers WHERE id=?", (center_id,)).fetchone():
-            raise InventoryError("El centro seleccionado no existe.")
+        if user["role"] != "admin" and user["role"] != "center":
+            raise AccessError("No tienes permiso para acceder a este centro.")
 
     def inventory(self, token: str, center_id: int) -> dict[str, list[dict]]:
         with self.transaction() as connection:
@@ -713,11 +903,15 @@ class Store:
         with self.transaction() as connection:
             if center_id is None:
                 self._actor(connection, token, admin=True)
-                centers = connection.execute(f"SELECT {REPORT_COLUMNS} FROM centers ORDER BY name").fetchall()
+                centers = connection.execute(
+                    f"SELECT {REPORT_COLUMNS} FROM centers "
+                    "WHERE account_type='health' ORDER BY name",
+                ).fetchall()
             else:
                 self._authorize_center(connection, token, center_id)
                 centers = connection.execute(
-                    f"SELECT {REPORT_COLUMNS} FROM centers WHERE id=?", (center_id,),
+                    f"SELECT {REPORT_COLUMNS} FROM centers "
+                    "WHERE id=? AND account_type='health'", (center_id,),
                 ).fetchall()
             tables = (
                 "quantities", "facilities", "equipment", "facility_counts",

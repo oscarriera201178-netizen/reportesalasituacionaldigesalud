@@ -6,7 +6,10 @@ import os
 from pathlib import Path
 from unittest.mock import patch
 
-from store import BED_TYPES, InventoryError, Store, load_center_catalog
+from store import (
+    BED_TYPES, InventoryError, MILITARY_CAUSES, MILITARY_GRADES, MILITARY_REDI,
+    Store, load_center_catalog,
+)
 from webapp import create_app
 
 
@@ -205,6 +208,85 @@ class HtmlApplicationTests(unittest.TestCase):
             item for item in self.store.users(self.admin_token)
             if item["center_id"] == center["id"]
         )["active"])
+
+    def test_military_account_is_limited_to_its_report(self):
+        self.login("admin", ADMIN_PASSWORD)
+        csrf = self.authenticated_csrf()
+        accounts_page = self.client.get("/admin/accounts")
+        self.assertIn(b"Crear cuenta de instituci", accounts_page.data)
+        response = self.client.post("/admin/accounts", data={
+            "csrf_token": csrf, "action": "create_military_account",
+            "component": "Guardia Nacional Bolivariana", "username": "guardia",
+            "password": CENTER_PASSWORD, "confirmation": CENTER_PASSWORD,
+        })
+        self.assertEqual(response.status_code, 302)
+        military_user = next(
+            user for user in self.store.users(self.admin_token)
+            if user["username"] == "guardia"
+        )
+        self.assertEqual(military_user["account_type"], "military")
+
+        military_client = self.app.test_client()
+        login_page = military_client.get("/login")
+        login_csrf = re.search(
+            rb'name="csrf_token" value="([^"]+)"', login_page.data,
+        ).group(1).decode()
+        login_response = military_client.post("/login", data={
+            "csrf_token": login_csrf, "username": "guardia",
+            "password": CENTER_PASSWORD,
+        })
+        self.assertEqual(login_response.status_code, 302)
+        self.assertEqual(military_client.get("/").headers["Location"], "/military")
+        page = military_client.get("/military")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Registro de Militares Fallecidos", page.data)
+        self.assertNotIn(b"CAMAS HOSPITALARIAS", page.data)
+        for option in (*MILITARY_GRADES, *MILITARY_CAUSES, *MILITARY_REDI):
+            self.assertIn(f'value="{option}"'.encode(), page.data)
+        self.assertIn(b'name="birth_date" type="date"', page.data)
+        self.assertIn(b'name="death_date" type="date"', page.data)
+        self.assertEqual(military_client.get("/reports.pdf?category=Camas").status_code, 403)
+        self.assertEqual(
+            military_client.get(f"/inventory/{military_user['center_id']}").status_code,
+            403,
+        )
+        military_csrf = re.search(
+            rb'name="csrf_token" value="([^"]+)"', page.data,
+        ).group(1).decode()
+        response = military_client.post("/military", data={
+            "csrf_token": military_csrf, "full_name": "Persona Fallecida",
+            "grade": "TTE", "cedula": "V-12345678",
+            "birth_date": "1990-05-10", "unit": "Unidad Uno",
+            "death_date": "2026-10-28", "cause": "Accidente de tránsito",
+            "redi": "REDI Capital", "zodi": "Zodi Uno",
+        })
+        self.assertEqual(response.status_code, 302)
+        page = military_client.get("/military")
+        self.assertIn(b"PERSONA FALLECIDA", page.data)
+        self.assertIn(b"ZODI UNO", page.data)
+        self.assertIn(b"UNIDAD UNO", page.data)
+        self.assertIn(b"Guardia Nacional Bolivariana", page.data)
+        military_pdf = military_client.get("/military/report.pdf")
+        self.assertEqual(military_pdf.mimetype, "application/pdf")
+        import pymupdf
+        with pymupdf.open(stream=military_pdf.data, filetype="pdf") as document:
+            pdf_text = document[0].get_text()
+        self.assertIn("Registro de Militares Fallecidos en el Componente Guardia Nacional Bolivariana", pdf_text)
+        for heading in (
+            "NRO.", "GDO/JQUIA", "NOMBRE Y APELLIDOS", "CEDULA",
+            "FECHA NAC.", "EDAD", "FECHA DE LA MUERTE",
+            "CAUSAS DE LA MUERTE", "REDI", "ZODI", "UNIDAD",
+        ):
+            self.assertIn(heading, pdf_text)
+        self.assertIn("PERSONA FALLECIDA", pdf_text)
+
+        self.assertEqual(self.client.get("/military").status_code, 200)
+        self.assertIn(b"PERSONA FALLECIDA", self.client.get("/military").data)
+        self.assertEqual(self.client.get("/military/report.pdf").mimetype, "application/pdf")
+        self.assertEqual(
+            self.client.get(f"/admin/accounts").status_code,
+            200,
+        )
 
     def test_forced_password_change_requires_confirmation(self):
         with self.store.transaction() as connection:

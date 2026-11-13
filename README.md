@@ -43,6 +43,10 @@ mostrar el texto completo.
   filtrar el inventario; el contador semanal aparece bajo el título institucional.
   La sección separada **Cuentas de centros** permite crear y gestionar accesos.
   Los centros, usuarios, inventarios y reportes existentes se conservan.
+- Administración también puede crear cuentas para las cinco instituciones
+  militares. Estas cuentas solo ingresan y consultan sus propios registros en
+  **Registro de Militares Fallecidos**; no acceden al inventario ni a los
+  informes de centros. Administración consulta el consolidado y genera el PDF.
 - Las cargas las realiza cada centro de salud, que consulta y actualiza
   únicamente sus registros. Su pantalla muestra el encabezado de sala situacional
   y, a continuación, los botones de categoría para registrar; no hay selector
@@ -263,6 +267,17 @@ el administrador consulta informes y cada centro accede solo a su inventario.
 Para entrar como centro, cierra la sesión administradora e inicia sesión con la
 cuenta del centro (o utiliza otro navegador).
 
+En **Cuentas de centros**, el administrador puede crear una cuenta para cada
+institución militar. Estas cuentas disponen únicamente del formulario de
+**Registro de Militares Fallecidos**, basado en el cuadro modelo: GDO/JQUIA,
+nombre y apellidos, cédula, fecha de nacimiento, edad calculada a la fecha de
+fallecimiento, fecha y causa de muerte, REDI, ZODI y unidad. El componente se
+asigna desde la institución de la cuenta. GDO/JQUIA, causa y REDI se eligen de
+listas; nombre, ZODI y unidad se guardan en mayúsculas, y las fechas usan el
+selector de calendario. Los registros se pueden consultar y descargar en PDF,
+pero no editar. Cada institución solo ve sus registros y administración puede
+consultar el consolidado.
+
 Cada centro accede a su inventario con la clave asignada por el administrador;
 solo el administrador puede cambiarla desde **Cuentas de centros**.
 Las sesiones vencen tras 30 minutos sin actividad o un máximo de ocho horas.
@@ -463,6 +478,10 @@ Antes de usar información real:
 4. Configura copias privadas de la base con la API de backup de SQLite o con
    el servidor detenido. Comprueba su restauración.
 5. Mantén fuera de Git las bases, respaldos y secretos.
+
+El Registro de Militares Fallecidos contiene datos personales y requiere acceso
+restringido. Comparte las cuentas y los PDF solo con personal autorizado y
+mantén las copias de seguridad privadas.
 
 Este proyecto requiere su propio repositorio y despliegue; no se publica con
 los cambios del repositorio Residencias. No introduzcas pacientes, donantes ni

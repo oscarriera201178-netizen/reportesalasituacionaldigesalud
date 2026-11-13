@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Registro de Militares Fallecidos · DIGESALUD-MPPD{% endblock %}
+{% block content %}
+<div class="admin-nav">
+  {% if current_actor.role == "admin" %}
+    <a class="button button-muted" href="{{ url_for('home') }}">Informes de centros</a>
+    <a class="button button-muted" href="{{ url_for('accounts') }}">Cuentas de centros</a>
+  {% endif %}
+  <a class="button button-primary" href="{{ url_for('military_report') }}">Registro de Militares Fallecidos</a>
+</div>
+<section class="panel">
+  <h1>Registro de Militares Fallecidos</h1>
+  {% if current_actor.role == "admin" %}
+    <p>Consulta consolidada de las cinco instituciones militares.</p>
+  {% else %}
+    <p>Registro de Militares Fallecidos en el Componente <strong>{{ current_actor.center_name }}</strong>. Solo puedes consultar los registros de tu institución.</p>
+  {% endif %}
+  <a class="button button-primary" href="{{ url_for('download_military_report') }}">Generar reporte PDF</a>
+</section>
+{% if current_actor.role != "admin" %}
+<section class="panel">
+  <h2>Ingresar registro</h2>
+  <form method="post" class="form-grid">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label>GDO/JQUIA<select name="grade" required>
+      <option value="">Selecciona un grado o jerarquía</option>
+      {% for grade in military_grades %}<option value="{{ grade }}">{{ grade }}</option>{% endfor %}
+    </select></label>
+    <label>NOMBRE Y APELLIDOS<input class="uppercase-field" name="full_name" maxlength="160" required></label>
+    <label>CÉDULA<input name="cedula" maxlength="32" required></label>
+    <label>FECHA NACIMIENTO<input name="birth_date" type="date" required></label>
+    <label>FECHA DE LA MUERTE<input name="death_date" type="date" required></label>
+    <label>CAUSAS DE LA MUERTE<select name="cause" required>
+      <option value="">Selecciona una causa</option>
+      {% for cause in military_causes %}<option value="{{ cause }}">{{ cause }}</option>{% endfor %}
+    </select></label>
+    <label>REDI<select name="redi" required>
+      <option value="">Selecciona una REDI</option>
+      {% for redi in military_redi %}<option value="{{ redi }}">{{ redi }}</option>{% endfor %}
+    </select></label>
+    <label>ZODI<input class="uppercase-field" name="zodi" maxlength="120" required></label>
+    <label>UNIDAD<input class="uppercase-field" name="unit" maxlength="160" required></label>
+    <p>La edad se calcula automáticamente según las fechas de nacimiento y fallecimiento.</p>
+    <button class="button button-primary" type="submit">Ingresar registro</button>
+  </form>
+</section>
+{% endif %}
+<section class="panel">
+  <h2>Registros ({{ records|length }})</h2>
+  {% if records %}
+    {% for component, component_records in records|groupby("component") %}
+      {% if current_actor.role == "admin" %}<h3>Componente {{ component }}</h3>{% endif %}
+      <div class="table-wrap"><table>
+        <thead><tr>
+          <th>NRO.</th><th>GDO/JQUIA</th><th>NOMBRE Y APELLIDOS</th>
+          <th>CEDULA</th><th>FECHA NAC.</th><th>EDAD</th>
+          <th>FECHA DE LA MUERTE</th><th>CAUSAS DE LA MUERTE</th>
+          <th>REDI</th><th>ZODI</th><th>UNIDAD</th>
+        </tr></thead>
+        <tbody>{% for record in component_records %}<tr>
+          <td>{{ loop.index }}</td><td>{{ record.grade }}</td><td>{{ record.full_name }}</td>
+          <td>{{ record.cedula }}</td><td>{{ record.birth_date }}</td><td>{{ record.age }}</td>
+          <td>{{ record.death_date }}</td><td>{{ record.cause }}</td>
+          <td>{{ record.redi }}</td><td>{{ record.zodi }}</td><td>{{ record.unit }}</td>
+        </tr>{% endfor %}</tbody>
+      </table></div>
+    {% endfor %}
+  {% else %}
+    <p>No hay registros ingresados.</p>
+  {% endif %}
+</section>
+{% endblock %}

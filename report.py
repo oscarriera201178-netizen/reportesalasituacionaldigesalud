@@ -7,7 +7,7 @@ import pymupdf
 
 from store import (
     AMBULANCE_TYPES, BED_TYPES, InventoryError, REPORT_TIMEZONE, SPECIAL_EQUIPMENT_TYPES,
-    THEATRE_TYPES, VEHICLE_GROUPS, VEHICLE_TYPES,
+    MILITARY_COMPONENTS, THEATRE_TYPES, VEHICLE_GROUPS, VEHICLE_TYPES,
 )
 
 
@@ -311,4 +311,73 @@ def generate_pdf(store, token, center_id=None, *, category=None, kind=None, vehi
                         doc, f"LABORATORIOS ESPECIALES {title_suffix}", ("Situación",), special_rows,
                         signature, subtitle, timestamp,
                     )
+        return doc.tobytes(garbage=4, deflate=True)
+
+
+def generate_military_pdf(records, component=None):
+    grouped = {name: [] for name in MILITARY_COMPONENTS}
+    for record in records:
+        grouped.setdefault(record["component"], []).append(record)
+    components = (
+        (component,) if component is not None
+        else tuple(MILITARY_COMPONENTS) + tuple(
+            name for name in grouped if name not in MILITARY_COMPONENTS
+        )
+    )
+    headers = (
+        "NRO.", "GDO/JQUIA", "NOMBRE Y APELLIDOS", "CEDULA", "FECHA NAC.",
+        "EDAD", "FECHA DE LA MUERTE", "CAUSAS DE LA MUERTE", "REDI", "ZODI", "UNIDAD",
+    )
+    widths = (39, 68, 120, 54, 76, 45, 115, 120, 70, 55, 142)
+    left = 28
+    with pymupdf.open() as doc:
+        for name in components:
+            component_records = grouped.get(name, [])
+            rows = component_records or (None,)
+
+            def new_page():
+                page = doc.new_page(width=960, height=540)
+                _text(
+                    page, pymupdf.Rect(28, 62, 932, 96),
+                    f"Registro de Militares Fallecidos en el Componente {name}",
+                    18, True,
+                )
+                x, y = left, 118
+                for header, width in zip(headers, widths):
+                    _cell(page, x, y, width, 31, header, bold=True, size=7)
+                    x += width
+                return page, y + 31
+
+            def row_height(values):
+                font = pymupdf.Font("helv")
+                heights = []
+                for value, width in zip(values, widths):
+                    lines = 1
+                    line = ""
+                    for character in str(value):
+                        if line and font.text_length(
+                            line + character, fontsize=7,
+                        ) > width - 6:
+                            lines += 1
+                            line = character
+                        else:
+                            line += character
+                    heights.append(lines * 9 + 8)
+                return max(30, *heights)
+
+            page, y = new_page()
+            for number, record in enumerate(rows, 1):
+                values = (
+                    number, record["grade"], record["full_name"], record["cedula"],
+                    record["birth_date"], record["age"], record["death_date"],
+                    record["cause"], record["redi"], record["zodi"], record["unit"],
+                ) if record else ("",) * len(headers)
+                height = row_height(values)
+                if y + height > 520:
+                    page, y = new_page()
+                x = left
+                for value, width in zip(values, widths):
+                    _cell(page, x, y, width, height, value, size=7)
+                    x += width
+                y += height
         return doc.tobytes(garbage=4, deflate=True)
