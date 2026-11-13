@@ -324,16 +324,46 @@ def generate_military_pdf(records, component=None):
             name for name in grouped if name not in MILITARY_COMPONENTS
         )
     )
+    components = tuple(name for name in components if grouped.get(name))
+    if not components:
+        raise InventoryError("No hay registros para generar el reporte con los filtros seleccionados.")
     headers = (
         "NRO.", "GDO/JQUIA", "NOMBRE Y APELLIDOS", "CEDULA", "FECHA NAC.",
         "EDAD", "FECHA DE LA MUERTE", "CAUSAS DE LA MUERTE", "REDI", "ZODI", "UNIDAD",
     )
-    widths = (39, 68, 120, 54, 76, 45, 115, 120, 70, 55, 142)
+    keys = (
+        "grade", "full_name", "cedula", "birth_date", "age", "death_date",
+        "cause", "redi", "zodi", "unit",
+    )
+    minimum_widths = (32, 50, 100, 65, 68, 32, 82, 100, 75, 65, 100)
+    maximum_widths = (40, 68, 200, 95, 80, 40, 115, 180, 130, 160, 200)
     left = 28
     with pymupdf.open() as doc:
         for name in components:
-            component_records = grouped.get(name, [])
-            rows = component_records or (None,)
+            rows = [
+                (number, *(record[key] for key in keys))
+                for number, record in enumerate(grouped[name], 1)
+            ]
+            font = pymupdf.Font("helv")
+            desired_widths = [
+                min(maximum, max(
+                    minimum,
+                    max(
+                        font.text_length(line, fontsize=7) + 8
+                        for row in rows for line in (str(row[index]).splitlines() or [""])
+                    ),
+                ))
+                for index, (minimum, maximum) in enumerate(zip(minimum_widths, maximum_widths))
+            ]
+            extra = 904 - sum(minimum_widths)
+            demands = [desired - minimum for desired, minimum in zip(desired_widths, minimum_widths)]
+            total_demand = sum(demands)
+            widths = [
+                minimum + extra * demand / total_demand
+                if total_demand > extra
+                else desired + (extra - total_demand) * minimum / sum(minimum_widths)
+                for minimum, desired, demand in zip(minimum_widths, desired_widths, demands)
+            ]
 
             def new_page():
                 page = doc.new_page(width=960, height=540)
@@ -354,29 +384,19 @@ def generate_military_pdf(records, component=None):
                 return page, y + 31
 
             def row_height(values):
-                font = pymupdf.Font("helv")
-                heights = []
-                for value, width in zip(values, widths):
-                    lines = 1
-                    line = ""
-                    for character in str(value):
-                        if line and font.text_length(
-                            line + character, fontsize=7,
-                        ) > width - 6:
-                            lines += 1
-                            line = character
-                        else:
-                            line += character
-                    heights.append(lines * 9 + 8)
-                return max(30, *heights)
+                for height in range(30, 307, 3):
+                    if all(
+                        page.new_shape().insert_textbox(
+                            pymupdf.Rect(3, 5, width - 3, height - 2),
+                            str(value), fontsize=7, fontname="helv", align=1,
+                        ) >= 0
+                        for value, width in zip(values, widths)
+                    ):
+                        return height
+                raise InventoryError("El texto de un registro no cabe en una página del reporte.")
 
             page, y = new_page()
-            for number, record in enumerate(rows, 1):
-                values = (
-                    number, record["grade"], record["full_name"], record["cedula"],
-                    record["birth_date"], record["age"], record["death_date"],
-                    record["cause"], record["redi"], record["zodi"], record["unit"],
-                ) if record else ("",) * len(headers)
+            for values in rows:
                 height = row_height(values)
                 if y + height > 482:
                     page, y = new_page()

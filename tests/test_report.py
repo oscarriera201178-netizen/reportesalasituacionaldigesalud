@@ -6,11 +6,62 @@ from unittest.mock import patch
 
 import pymupdf
 
-from report import SUMMARY_CATEGORIES, counts, generate_pdf, report_data
+from report import SUMMARY_CATEGORIES, counts, generate_military_pdf, generate_pdf, report_data
 from store import AccessError, InventoryError, REPORT_TIMEZONE, SPECIAL_EQUIPMENT_TYPES, Store, load_center_catalog
 
 
 PASSWORD = "Test-report-password-123"
+
+
+class MilitaryReportLayoutTests(unittest.TestCase):
+    def test_components_without_records_are_omitted_and_empty_results_are_reported(self):
+        record = {
+            "component": "Guardia Nacional Bolivariana", "grade": "TTE",
+            "full_name": "PERSONA DE PRUEBA", "cedula": "V-12345678",
+            "birth_date": "1990-01-01", "age": 36, "death_date": "2026-10-15",
+            "cause": "Muerte natural", "redi": "REDI Capital",
+            "zodi": "ZODI CAPITAL", "unit": "UNIDAD DE PRUEBA",
+        }
+        with pymupdf.open(
+            stream=generate_military_pdf([record]), filetype="pdf",
+        ) as document:
+            self.assertEqual(len(document), 1)
+            self.assertIn("PERSONA DE PRUEBA", document[0].get_text())
+            self.assertNotIn("Ejército Bolivariano", document[0].get_text())
+        for records, component in (([], None), ([record], "Ejército Bolivariano")):
+            with self.subTest(component=component), self.assertRaisesRegex(
+                InventoryError, "No hay registros",
+            ):
+                generate_military_pdf(records, component)
+
+    def test_long_text_is_complete_inside_cells_and_paginated_above_footer(self):
+        record = {
+            "component": "Guardia Nacional Bolivariana", "grade": "SOLDADO",
+            "full_name": "NOMBRE Y APELLIDOS MUY EXTENSOS " * 5,
+            "cedula": "V-12345678", "birth_date": "1990-01-01",
+            "age": 36, "death_date": "2026-10-15",
+            "cause": "Incidente por arma de fuego",
+            "redi": "REDI Marítima e Insular", "zodi": "ZODI DE PRUEBA " * 8,
+            "unit": "UNIDAD CON UNA DENOMINACION MUY EXTENSA " * 4,
+        }
+        with pymupdf.open(
+            stream=generate_military_pdf([record] * 16), filetype="pdf",
+        ) as document:
+            self.assertGreater(len(document), 1)
+            recovered = []
+            for page in document:
+                self.assertTrue(page.get_xobjects())
+                self.assertIn("FUENTE: Sala Situacional/DIGESALUD", page.get_text())
+                words = page.get_text("words")
+                body = [word for word in words if 176 <= word[1] < 490]
+                self.assertTrue(body)
+                self.assertTrue(all(word[3] <= 482 for word in body))
+                self.assertTrue(all(28 <= word[0] < word[2] <= 932 for word in body))
+                recovered.append(" ".join(word[4] for word in body))
+            text = " ".join(recovered)
+            for key in ("full_name", "cause", "redi", "zodi", "unit"):
+                expected = " ".join(record[key].split())
+                self.assertEqual(text.count(expected), 16, key)
 
 
 class ReportTests(unittest.TestCase):

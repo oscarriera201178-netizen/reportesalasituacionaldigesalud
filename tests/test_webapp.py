@@ -310,7 +310,7 @@ class HtmlApplicationTests(unittest.TestCase):
 
         all_pdf = self.client.get("/military/report.pdf")
         with pymupdf.open(stream=all_pdf.data, filetype="pdf") as document:
-            self.assertEqual(len(document), 5)
+            self.assertEqual(len(document), 2)
             all_text = "\n".join(page.get_text() for page in document)
         self.assertIn("PERSONA FALLECIDA", all_text)
         self.assertIn("OTRO MILITAR", all_text)

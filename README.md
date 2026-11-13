@@ -280,7 +280,9 @@ consultar el consolidado.
 La búsqueda permite combinar filtros por REDI, causa, mes y año de fallecimiento y, para
 administración, por componente o todos los componentes. Los mismos filtros se
 aplican al PDF, que incluye cintillo institucional, fuente y fecha de generación
-en cada página.
+en cada página. Solo se generan cuadros de componentes con registros para esos
+filtros; si no hay resultados se muestra un aviso en el portal. Las columnas
+se ajustan al contenido y las filas crecen para mostrar el texto completo.
 
 Cada centro accede a su inventario con la clave asignada por el administrador;
 solo el administrador puede cambiarla desde **Cuentas de centros**.
