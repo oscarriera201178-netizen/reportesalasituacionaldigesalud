@@ -574,6 +574,105 @@ class HtmlApplicationTests(unittest.TestCase):
             self.assertEqual(self.client.get(path).status_code, 403)
         self.assertEqual(self.client.post("/health/military", data=fields).status_code, 403)
 
+    def test_traffic_registry_is_private_complete_and_independent_with_filtered_consolidation(self):
+        import pymupdf
+
+        self.store.create_center(self.admin_token, "Centro Sur", "Sur", "sur", CENTER_PASSWORD)
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        self.login("norte", CENTER_PASSWORD)
+        csrf = self.authenticated_csrf()
+        inventory = self.client.get(f"/inventory/{self.center['id']}")
+        self.assertIn(b'href="/health/traffic"', inventory.data)
+        page = self.client.get("/health/traffic")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn("Pacientes Militares atendidos por Accidentes de Tránsito".encode(), page.data)
+        for field in ("attention_date", "accident_type", "patient_condition", "traffic_role"):
+            self.assertIn(f'name="{field}"'.encode(), page.data)
+        self.assertNotIn(b'name="death_date"', page.data)
+        fields = {
+            "grade": "CAP", "full_name": "Paciente Norte", "cedula": "V-12345678",
+            "birth_date": "2000-10-16", "attention_date": "2026-10-15",
+            "accident_type": "Moto", "patient_condition": "Heridas leves",
+            "traffic_role": "Conductor", "redi": "REDI Capital", "zodi": "zodi norte",
+            "unit": "unidad norte", "component": "Armada Bolivariana",
+        }
+        for field in fields:
+            for value in (None, "", "   "):
+                invalid = {**fields}
+                if value is None:
+                    del invalid[field]
+                else:
+                    invalid[field] = value
+                with self.subTest(field=field, value=value):
+                    response = self.client.post(
+                        "/health/traffic", data={"csrf_token": csrf, **invalid},
+                    )
+                    self.assertEqual(response.status_code, 303)
+                    self.assertEqual(self.store.traffic_records(self.admin_token), [])
+        before = self.store.submission(self.store.login("norte", CENTER_PASSWORD), self.center["id"])
+        response = self.client.post("/health/traffic", data={"csrf_token": csrf, **fields})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/health/traffic")
+        north = self.store.login("norte", CENTER_PASSWORD)
+        self.assertEqual(self.store.submission(north, self.center["id"]), before)
+        rows = self.store.traffic_records(north)
+        self.assertEqual(rows[0]["age"], 25)
+        self.assertEqual(rows[0]["full_name"], "PACIENTE NORTE")
+        self.assertEqual(rows[0]["zodi"], "ZODI NORTE")
+        self.assertEqual(rows[0]["unit"], "UNIDAD NORTE")
+        south = self.store.login("sur", CENTER_PASSWORD)
+        self.assertEqual(self.store.traffic_records(south), [])
+        self.store.add_traffic_record(
+            south, **{**fields, "full_name": "PACIENTE SUR", "attention_date": "2025-11-15",
+                      "component": "Ejército Bolivariano", "accident_type": "Carro"},
+        )
+        page = self.client.get("/health/traffic?center_id=2")
+        self.assertIn(b"PACIENTE NORTE", page.data)
+        self.assertNotIn(b"PACIENTE SUR", page.data)
+        self.assertEqual(self.store.military_records(self.admin_token, account_type="health"), [])
+        private_pdf = self.client.get("/health/traffic/report.pdf")
+        self.assertEqual(private_pdf.status_code, 200)
+        with pymupdf.open(stream=private_pdf.data, filetype="pdf") as document:
+            text = " ".join(document[0].get_text().split())
+        self.assertIn("PACIENTE NORTE", text)
+        self.assertNotIn("PACIENTE SUR", text)
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = self.admin_token
+        consolidated = self.client.get("/health/traffic/report.pdf")
+        self.assertEqual(consolidated.status_code, 200)
+        with pymupdf.open(stream=consolidated.data, filetype="pdf") as document:
+            self.assertEqual(len(document), 1)
+            self.assertTrue(document[0].get_xobjects())
+            text = " ".join(document[0].get_text().split())
+        for value in ("PACIENTE NORTE", "PACIENTE SUR", "Centro Norte", "Centro Sur",
+                      "FECHA DE ATENCIÓN", "TIPO DE ACCIDENTE", "CONDICIÓN", "PARTICIPACIÓN",
+                      "Conductor", "Heridas leves", "FUENTE: Sala Situacional/DIGESALUD"):
+            self.assertIn(value, text)
+        self.assertNotIn("FECHA DE LA MUERTE", text)
+        filters = {"month": "10", "year": "2026", "cause": "Moto",
+                   "component": "Armada Bolivariana", "redi": "REDI Capital"}
+        page = self.client.get("/health/traffic", query_string=filters)
+        self.assertIn(b"PACIENTE NORTE", page.data)
+        self.assertNotIn(b"PACIENTE SUR", page.data)
+        pdf = self.client.get("/health/traffic/report.pdf", query_string=filters)
+        with pymupdf.open(stream=pdf.data, filetype="pdf") as document:
+            text = document[0].get_text()
+        self.assertIn("PACIENTE NORTE", text)
+        self.assertNotIn("PACIENTE SUR", text)
+        self.assertEqual(
+            self.client.post("/health/traffic", data={"csrf_token": csrf, **fields}).status_code, 403,
+        )
+        guard = self.store.login("guardia", CENTER_PASSWORD)
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = guard
+        for path in ("/health/traffic", "/health/traffic/report.pdf"):
+            self.assertEqual(self.client.get(path).status_code, 403)
+        self.assertEqual(
+            self.client.post("/health/traffic", data={"csrf_token": csrf, **fields}).status_code, 403,
+        )
+
     def test_forced_password_change_requires_confirmation(self):
         with self.store.transaction() as connection:
             connection.execute(

@@ -23,7 +23,7 @@ from store import (
     MILITARY_COMPONENTS, MILITARY_GRADES, MILITARY_REDI,
     REPORT_LOADED, REPORT_SECTIONS, REPORT_TIMEZONE, load_center_catalog,
     SPECIAL_EQUIPMENT_TYPES, STATES, Store, VEHICLE_GROUPS,
-    weekly_status,
+    TRAFFIC_TYPES, TRAFFIC_CONDITIONS, TRAFFIC_ROLES, weekly_status,
 )
 
 
@@ -383,7 +383,7 @@ def create_app(store=None, *, secret_key=None):
             abort(400, "Acción no válida.")
         return redirect(url_for("accounts"))
 
-    def filtered_military_records(current_actor, *, health_registry=False):
+    def filtered_military_records(current_actor, *, health_registry=False, traffic_registry=False):
         selected_component = request.args.get("component") or None
         if current_actor["role"] != "admin" and not health_registry:
             selected_component = current_actor["center_name"]
@@ -403,30 +403,37 @@ def create_app(store=None, *, secret_key=None):
         selected_cause = request.args.get("cause") or None
         if selected_redi is not None and selected_redi not in MILITARY_REDI:
             abort(400, "REDI no válida.")
-        if selected_cause is not None and selected_cause not in MILITARY_CAUSES:
-            abort(400, "Causa de fallecimiento no válida.")
+        cause_options = TRAFFIC_TYPES if traffic_registry else MILITARY_CAUSES
+        if selected_cause is not None and selected_cause not in cause_options:
+            abort(400, "Tipo de accidente no válido." if traffic_registry else "Causa de fallecimiento no válida.")
         filters["redi"] = selected_redi
         filters["cause"] = selected_cause
-        available_records = get_store().military_records(
+        available_records = get_store().traffic_records(token()) if traffic_registry else get_store().military_records(
             token(), account_type="health" if health_registry else "military",
         )
-        years = {int(record["death_date"][:4]) for record in available_records}
+        date_key = "attention_date" if traffic_registry else "death_date"
+        cause_key = "accident_type" if traffic_registry else "cause"
+        years = {int(record[date_key][:4]) for record in available_records}
         years.add(datetime.now(REPORT_TIMEZONE).year)
         if filters["year"] is not None:
             years.add(filters["year"])
         records = [
             record for record in available_records
             if (selected_component is None or record["component"] == selected_component)
-            and (filters["month"] is None or int(record["death_date"][5:7]) == filters["month"])
-            and (filters["year"] is None or int(record["death_date"][:4]) == filters["year"])
+            and (filters["month"] is None or int(record[date_key][5:7]) == filters["month"])
+            and (filters["year"] is None or int(record[date_key][:4]) == filters["year"])
             and (selected_redi is None or record["redi"] == selected_redi)
-            and (selected_cause is None or record["cause"] == selected_cause)
+            and (selected_cause is None or record[cause_key] == selected_cause)
         ]
         return records, selected_component, filters, sorted(years, reverse=True)
 
     @app.get("/military")
     @app.get("/health/military", defaults={"health_registry": True}, endpoint="health_military_report")
-    def military_report(health_registry=False):
+    @app.get(
+        "/health/traffic", defaults={"health_registry": True, "traffic_registry": True},
+        endpoint="traffic_report",
+    )
+    def military_report(health_registry=False, traffic_registry=False):
         current_actor = require_role()
         if not isinstance(current_actor, dict):
             return current_actor or redirect(url_for("login"))
@@ -434,18 +441,25 @@ def create_app(store=None, *, secret_key=None):
         if current_actor["role"] != "admin" and current_actor["account_type"] != account_type:
             abort(403)
         records, selected_component, filters, years = filtered_military_records(
-            current_actor, health_registry=health_registry,
+            current_actor, health_registry=health_registry, traffic_registry=traffic_registry,
         )
         return render_template(
             "military_records.html", records=records,
-            military_grades=MILITARY_GRADES, military_causes=MILITARY_CAUSES,
+            military_grades=MILITARY_GRADES,
+            military_causes=TRAFFIC_TYPES if traffic_registry else MILITARY_CAUSES,
             military_redi=MILITARY_REDI, military_components=MILITARY_COMPONENTS,
             selected_component=selected_component, month=filters["month"],
             year=filters["year"], selected_redi=filters["redi"],
             selected_cause=filters["cause"], years=years,
             health_registry=health_registry,
-            report_endpoint="health_military_report" if health_registry else "military_report",
-            download_endpoint="download_health_military_report" if health_registry else "download_military_report",
+            traffic_registry=traffic_registry, traffic_conditions=TRAFFIC_CONDITIONS,
+            traffic_roles=TRAFFIC_ROLES,
+            report_endpoint="traffic_report" if traffic_registry else (
+                "health_military_report" if health_registry else "military_report"
+            ),
+            download_endpoint="download_traffic_report" if traffic_registry else (
+                "download_health_military_report" if health_registry else "download_military_report"
+            ),
             months=(
                 "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
                 "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
@@ -471,12 +485,36 @@ def create_app(store=None, *, secret_key=None):
         flash("Registro ingresado.", "success")
         return redirect(url_for("health_military_report" if health_registry else "military_report"))
 
+    @app.post("/health/traffic")
+    def add_traffic_record():
+        current_actor = require_role("center")
+        if not isinstance(current_actor, dict):
+            return current_actor or redirect(url_for("login"))
+        if current_actor["account_type"] != "health":
+            abort(403)
+        get_store().add_traffic_record(
+            token(), **{
+                field: request.form.get(field, "") for field in (
+                    "grade", "full_name", "cedula", "birth_date", "attention_date",
+                    "accident_type", "patient_condition", "traffic_role", "redi",
+                    "zodi", "unit", "component",
+                )
+            },
+        )
+        flash("Registro ingresado.", "success")
+        return redirect(url_for("traffic_report"))
+
     @app.get("/military/report.pdf")
     @app.get(
         "/health/military/report.pdf", defaults={"health_registry": True},
         endpoint="download_health_military_report",
     )
-    def download_military_report(health_registry=False):
+    @app.get(
+        "/health/traffic/report.pdf",
+        defaults={"health_registry": True, "traffic_registry": True},
+        endpoint="download_traffic_report",
+    )
+    def download_military_report(health_registry=False, traffic_registry=False):
         current_actor = require_role()
         if not isinstance(current_actor, dict):
             return current_actor or redirect(url_for("login"))
@@ -485,14 +523,16 @@ def create_app(store=None, *, secret_key=None):
         ):
             abort(403)
         records, selected_component, _filters, _years = filtered_military_records(
-            current_actor, health_registry=health_registry,
+            current_actor, health_registry=health_registry, traffic_registry=traffic_registry,
         )
         pdf = generate_military_pdf(
             records, component=selected_component, health_registry=health_registry,
+            traffic_registry=traffic_registry,
         )
         return send_file(
             io.BytesIO(pdf), as_attachment=True,
-            download_name="Registro_de_Militares_Fallecidos.pdf",
+            download_name="Pacientes_Militares_Accidentes_Transito.pdf"
+            if traffic_registry else "Registro_de_Militares_Fallecidos.pdf",
             mimetype="application/pdf",
         )
 

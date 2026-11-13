@@ -7,6 +7,7 @@
     <a class="button {% if category == key %}button-primary{% else %}button-muted{% endif %}" href="{{ url_for('inventory', center_id=center.id, section=key) }}">{{ label }}</a>
   {% endfor %}
   <a class="button button-muted" href="{{ url_for('health_military_report') }}">Registros de Militares fallecidos</a>
+  <a class="button button-muted" href="{{ url_for('traffic_report') }}">Pacientes Militares atendidos por Accidentes de Tránsito</a>
 </nav>
 {% if loaded and status.editable %}
   <div class="notice notice-success">Sección cargada y bloqueada hasta el envío final. Puedes editarla para corregirla.</div>

@@ -45,9 +45,15 @@ class MilitaryReportLayoutTests(unittest.TestCase):
             "unit": "UNIDAD CON UNA DENOMINACION MUY EXTENSA " * 4,
         }
         record["center_name"] = "CENTRO DE SALUD CON UNA DENOMINACION MUY EXTENSA " * 3
-        for health_registry in (False, True):
-            with self.subTest(health_registry=health_registry), pymupdf.open(
-                stream=generate_military_pdf([record] * 16, health_registry=health_registry),
+        record.update(
+            attention_date="2026-10-15", accident_type="Bicicleta",
+            patient_condition="Politraumatismo craneoencefálico", traffic_role="Pasajero",
+        )
+        for health_registry, traffic_registry in ((False, False), (True, False), (True, True)):
+            with self.subTest(health_registry=health_registry, traffic_registry=traffic_registry), pymupdf.open(
+                stream=generate_military_pdf(
+                    [record] * 16, health_registry=health_registry, traffic_registry=traffic_registry,
+                ),
                 filetype="pdf",
             ) as document:
                 self.assertGreater(len(document), 1)
@@ -63,6 +69,9 @@ class MilitaryReportLayoutTests(unittest.TestCase):
                     recovered.append(" ".join(word[4] for word in body))
                 text = " ".join(recovered)
                 keys = ("full_name", "cause", "redi", "zodi", "unit")
+                if traffic_registry:
+                    keys = ("full_name", "accident_type", "patient_condition", "traffic_role",
+                            "redi", "zodi", "unit")
                 if health_registry:
                     keys += ("center_name", "component")
                 for key in keys:

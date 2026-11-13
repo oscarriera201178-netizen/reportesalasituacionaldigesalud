@@ -300,6 +300,23 @@ guardar. Administración consulta un consolidado exclusivo de centros, en un
 páginas si es necesario, sin separar cuadros por institución. No se mezcla
 con el consolidado de las cuentas de componentes.
 
+El ítem **Pacientes Militares atendidos por Accidentes de Tránsito** es exclusivo
+para centros de salud y también es independiente del envío semanal. Conserva los
+datos del militar y su componente, pero usa **fecha de atención**, con edad
+calculada en esa fecha. Todos los campos son obligatorios. Incluye estas listas:
+
+- Tipo de accidente: Moto, Carro y Bicicleta.
+- Condición: Heridas leves, Heridas graves, Politraumatismo severo,
+  Politraumatismo leve, Politraumatismo craneoencefálico y Fallecido.
+- Participación: Conductor, Pasajero y Peatón.
+
+Cada centro ingresa y consulta solamente sus pacientes, sin editar después de
+guardar. Administración consulta el consolidado en un único cuadro con componente
+y centro de salud, y puede filtrar por componente, mes/año de atención, REDI y
+tipo de accidente. Los mismos filtros se aplican al PDF con cintillo y pie de
+letra institucional. Estos registros no se mezclan con los de fallecidos:
+seleccionar **Fallecido** no crea automáticamente un registro de fallecimiento.
+
 Cada centro accede a su inventario con la clave asignada por el administrador;
 solo el administrador puede cambiarla desde **Cuentas de centros**.
 Las sesiones vencen tras 30 minutos sin actividad o un máximo de ocho horas.

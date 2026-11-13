@@ -63,6 +63,12 @@ MILITARY_REDI = (
     "REDI Guayana", "REDI Occidental", "REDI Oriental",
     "REDI Marítima e Insular",
 )
+TRAFFIC_TYPES = ("Moto", "Carro", "Bicicleta")
+TRAFFIC_CONDITIONS = (
+    "Heridas leves", "Heridas graves", "Politraumatismo severo",
+    "Politraumatismo leve", "Politraumatismo craneoencefálico", "Fallecido",
+)
+TRAFFIC_ROLES = ("Conductor", "Pasajero", "Peatón")
 FACILITY_CATEGORIES = ("Banco de sangre", "Laboratorio", "Quirófano")
 INVENTORY_QUANTITIES = {
     "Camas": BED_TYPES,
@@ -133,6 +139,24 @@ def _iso_date(value: str, label: str) -> str:
 def _password(password: str) -> None:
     if not 12 <= len(password) <= 128:
         raise InventoryError("La contraseña debe tener entre 12 y 128 caracteres.")
+
+
+def _military_patient_fields(grade, full_name, cedula, birth_date, redi, zodi, unit):
+    grade = _text(grade, "Grado", 10)
+    if grade not in MILITARY_GRADES:
+        raise InventoryError("Selecciona un grado o jerarquía válido.")
+    redi = _text(redi, "REDI", 80)
+    if redi not in MILITARY_REDI:
+        raise InventoryError("Selecciona una REDI válida.")
+    return {
+        "grade": grade,
+        "full_name": _text(full_name, "Nombre completo", 160).upper(),
+        "cedula": _text(cedula, "Cédula", 32),
+        "birth_date": _iso_date(birth_date, "Fecha de nacimiento"),
+        "redi": redi,
+        "zodi": _text(zodi, "ZODI", 120).upper(),
+        "unit": _text(unit, "Unidad", 160).upper(),
+    }
 
 
 def _username(username: str) -> str:
@@ -332,6 +356,23 @@ class Store:
                     cause TEXT NOT NULL DEFAULT '',
                     redi TEXT NOT NULL DEFAULT '',
                     zodi TEXT NOT NULL DEFAULT '',
+                    created_at REAL NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS traffic_records (
+                    id INTEGER PRIMARY KEY,
+                    center_id INTEGER NOT NULL REFERENCES centers(id),
+                    full_name TEXT NOT NULL,
+                    grade TEXT NOT NULL,
+                    cedula TEXT NOT NULL,
+                    birth_date TEXT NOT NULL,
+                    component TEXT NOT NULL,
+                    unit TEXT NOT NULL,
+                    attention_date TEXT NOT NULL,
+                    accident_type TEXT NOT NULL,
+                    patient_condition TEXT NOT NULL,
+                    traffic_role TEXT NOT NULL,
+                    redi TEXT NOT NULL,
+                    zodi TEXT NOT NULL,
                     created_at REAL NOT NULL
                 );
             """)
@@ -757,23 +798,14 @@ class Store:
         birth_date: str, death_date: str, cause: str, redi: str,
         zodi: str, unit: str, *, component: str | None = None,
     ) -> None:
-        full_name = _text(full_name, "Nombre completo", 160).upper()
-        grade = _text(grade, "Grado", 10)
-        if grade not in MILITARY_GRADES:
-            raise InventoryError("Selecciona un grado o jerarquía válido.")
-        cedula = _text(cedula, "Cédula", 32)
-        birth_date = _iso_date(birth_date, "Fecha de nacimiento")
+        patient = _military_patient_fields(grade, full_name, cedula, birth_date, redi, zodi, unit)
+        birth_date = patient["birth_date"]
         death_date = _iso_date(death_date, "Fecha de fallecimiento")
         if death_date < birth_date:
             raise InventoryError("La fecha de fallecimiento no puede ser anterior a la fecha de nacimiento.")
         cause = _text(cause, "Causa de la muerte", 80)
         if cause not in MILITARY_CAUSES:
             raise InventoryError("Selecciona una causa de muerte válida.")
-        redi = _text(redi, "REDI", 80)
-        if redi not in MILITARY_REDI:
-            raise InventoryError("Selecciona una REDI válida.")
-        zodi = _text(zodi, "ZODI", 120).upper()
-        unit = _text(unit, "Unidad", 160).upper()
         with self.transaction() as connection:
             user = self._actor(connection, token)
             if user["role"] != "center":
@@ -796,8 +828,66 @@ class Store:
                 "cause,redi,zodi,created_at"
                 ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
-                    user["center_id"], full_name, grade, cedula, birth_date,
-                    component, unit, death_date, cause, redi, zodi, time.time(),
+                    user["center_id"], patient["full_name"], patient["grade"], patient["cedula"],
+                    birth_date, component, patient["unit"], death_date, cause,
+                    patient["redi"], patient["zodi"], time.time(),
+                ),
+            )
+
+    def traffic_records(self, token: str) -> list[dict]:
+        with self.transaction() as connection:
+            user = self._actor(connection, token)
+            parameters = ()
+            where = " WHERE c.account_type='health'"
+            if user["role"] != "admin":
+                self._authorize_center(connection, token, user["center_id"])
+                where += " AND r.center_id=?"
+                parameters = (user["center_id"],)
+            records = [dict(row) for row in connection.execute(
+                "SELECT r.*,c.name AS center_name FROM traffic_records r "
+                "JOIN centers c ON c.id=r.center_id"
+                f"{where} ORDER BY r.attention_date DESC,r.id DESC", parameters,
+            )]
+            for record in records:
+                born = datetime.strptime(record["birth_date"], "%Y-%m-%d").date()
+                attended = datetime.strptime(record["attention_date"], "%Y-%m-%d").date()
+                record["age"] = attended.year - born.year - (
+                    (attended.month, attended.day) < (born.month, born.day)
+                )
+            return records
+
+    def add_traffic_record(
+        self, token: str, *, grade: str, full_name: str, cedula: str,
+        birth_date: str, attention_date: str, accident_type: str,
+        patient_condition: str, traffic_role: str, redi: str, zodi: str,
+        unit: str, component: str,
+    ) -> None:
+        patient = _military_patient_fields(grade, full_name, cedula, birth_date, redi, zodi, unit)
+        attention_date = _iso_date(attention_date, "Fecha de atención")
+        if attention_date < patient["birth_date"]:
+            raise InventoryError("La fecha de atención no puede ser anterior a la fecha de nacimiento.")
+        for value, options, label in (
+            (component, MILITARY_COMPONENTS, "componente"),
+            (accident_type, TRAFFIC_TYPES, "tipo de accidente"),
+            (patient_condition, TRAFFIC_CONDITIONS, "condición"),
+            (traffic_role, TRAFFIC_ROLES, "participación"),
+        ):
+            if value not in options:
+                raise InventoryError(f"Selecciona una opción válida de {label}.")
+        with self.transaction() as connection:
+            user = self._actor(connection, token)
+            if user["role"] != "center":
+                raise AccessError("Solo un centro de salud puede ingresar atenciones.")
+            self._authorize_center(connection, token, user["center_id"])
+            connection.execute(
+                "INSERT INTO traffic_records(center_id,full_name,grade,cedula,birth_date,"
+                "component,unit,attention_date,accident_type,patient_condition,traffic_role,"
+                "redi,zodi,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (
+                    user["center_id"], patient["full_name"], patient["grade"], patient["cedula"],
+                    patient["birth_date"], component, patient["unit"], attention_date,
+                    accident_type, patient_condition, traffic_role, patient["redi"],
+                    patient["zodi"], time.time(),
                 ),
             )
 

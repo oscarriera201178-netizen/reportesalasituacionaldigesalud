@@ -314,7 +314,8 @@ def generate_pdf(store, token, center_id=None, *, category=None, kind=None, vehi
         return doc.tobytes(garbage=4, deflate=True)
 
 
-def generate_military_pdf(records, component=None, *, health_registry=False):
+def generate_military_pdf(records, component=None, *, health_registry=False, traffic_registry=False):
+    health_registry = health_registry or traffic_registry
     grouped = {name: [] for name in MILITARY_COMPONENTS}
     for record in records:
         grouped.setdefault(record["component"], []).append(record)
@@ -346,6 +347,19 @@ def generate_military_pdf(records, component=None, *, health_registry=False):
         keys += ("component", "center_name")
         minimum_widths = (26, 42, 85, 58, 60, 28, 65, 75, 62, 55, 75, 85, 88)
         maximum_widths += (160, 200)
+    if traffic_registry:
+        headers = (
+            "NRO.", "GDO/JQUIA", "NOMBRE Y APELLIDOS", "CEDULA", "FECHA NAC.",
+            "EDAD", "FECHA DE ATENCIÓN", "TIPO DE ACCIDENTE", "CONDICIÓN",
+            "PARTICIPACIÓN", "REDI", "ZODI", "UNIDAD", "COMPONENTE", "CENTRO DE SALUD",
+        )
+        keys = (
+            "grade", "full_name", "cedula", "birth_date", "age", "attention_date",
+            "accident_type", "patient_condition", "traffic_role", "redi", "zodi",
+            "unit", "component", "center_name",
+        )
+        minimum_widths = (24, 35, 75, 58, 60, 25, 65, 50, 80, 65, 55, 45, 50, 70, 80)
+        maximum_widths = (35, 50, 160, 80, 70, 30, 80, 80, 140, 80, 100, 100, 150, 150, 160)
     left = 28
     with pymupdf.open() as doc:
         for name in components:
@@ -383,8 +397,11 @@ def generate_military_pdf(records, component=None, *, health_registry=False):
                     )
                 _text(
                     page, pymupdf.Rect(28, 104, 932, 135),
-                    "Registros de Militares Fallecidos en Centros de Salud"
-                    if health_registry else f"Registro de Militares Fallecidos en el Componente {name}",
+                    "Pacientes Militares atendidos por Accidentes de Tránsito"
+                    if traffic_registry else (
+                        "Registros de Militares Fallecidos en Centros de Salud"
+                        if health_registry else f"Registro de Militares Fallecidos en el Componente {name}"
+                    ),
                     16, True,
                 )
                 x, y = left, 145

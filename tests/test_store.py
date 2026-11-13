@@ -39,6 +39,43 @@ class StoreTests(unittest.TestCase):
         self.store.change_password(self.center, TEMPORARY, CHANGED)
         self.center = self.store.login("norte", CHANGED)
 
+    def test_traffic_validation_persistence_and_separation_from_death_records(self):
+        fields = {
+            "grade": "CAP", "full_name": "Paciente de prueba", "cedula": "V-12345678",
+            "birth_date": "2000-10-16", "attention_date": "2026-10-16",
+            "accident_type": "Bicicleta", "patient_condition": "Fallecido",
+            "traffic_role": "Peatón", "redi": "REDI Capital", "zodi": "zodi prueba",
+            "unit": "unidad prueba", "component": "Armada Bolivariana",
+        }
+        for field in ("grade", "component", "accident_type", "patient_condition", "traffic_role", "redi"):
+            with self.subTest(field=field), self.assertRaises(InventoryError):
+                self.store.add_traffic_record(self.center, **{**fields, field: "Otra opción"})
+        for value in ("1999-10-15", "2026-02-30", "16/10/2026"):
+            with self.subTest(date=value), self.assertRaises(InventoryError):
+                self.store.add_traffic_record(self.center, **{**fields, "attention_date": value})
+        with self.assertRaises(AccessError):
+            self.store.add_traffic_record(self.admin, **fields)
+        self.store.create_military_account(
+            self.admin, "Guardia Nacional Bolivariana", "guardia", TEMPORARY,
+        )
+        military = self.store.login("guardia", TEMPORARY)
+        with self.assertRaises(AccessError):
+            self.store.add_traffic_record(military, **fields)
+        with self.assertRaises(AccessError):
+            self.store.traffic_records(military)
+        self.assertEqual(self.store.traffic_records(self.admin), [])
+        self.store.add_traffic_record(self.center, **fields)
+        with self.store.connect() as connection:
+            path = connection.execute("PRAGMA database_list").fetchone()["file"]
+        reopened = Store(Path(path))
+        rows = reopened.traffic_records(self.center)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["age"], 26)
+        self.assertEqual(rows[0]["patient_condition"], "Fallecido")
+        self.assertEqual(rows[0]["center_id"], self.north)
+        self.assertEqual(reopened.military_records(self.admin, account_type="health"), [])
+        self.assertEqual(reopened.military_records(self.admin), [])
+
     def test_report_snapshot_batches_tables_for_all_34_centers(self):
         with self.store.transaction() as connection:
             connection.executemany(

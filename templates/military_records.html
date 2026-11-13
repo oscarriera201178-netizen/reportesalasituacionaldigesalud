@@ -1,5 +1,6 @@
 {% extends "base.html" %}
-{% block title %}Registro de Militares Fallecidos · DIGESALUD-MPPD{% endblock %}
+{% set registry_title = "Pacientes Militares atendidos por Accidentes de Tránsito" if traffic_registry else ("Registros de Militares fallecidos en centros de salud" if health_registry else "Registro de Militares Fallecidos") %}
+{% block title %}{{ registry_title }} · DIGESALUD-MPPD{% endblock %}
 {% block content %}
 <div class="admin-nav">
   {% if current_actor.role == "admin" %}
@@ -9,10 +10,10 @@
   {% if health_registry and current_actor.role != "admin" %}
     <a class="button button-muted" href="{{ url_for('home') }}">Inventario del centro</a>
   {% endif %}
-  <a class="button button-primary" href="{{ url_for(report_endpoint) }}">{{ "Registros de Militares fallecidos" if health_registry else "Registro de Militares Fallecidos" }}</a>
+  <a class="button button-primary" href="{{ url_for(report_endpoint) }}">{{ registry_title }}</a>
 </div>
 <section class="panel">
-  <h1>{{ "Registros de Militares fallecidos en centros de salud" if health_registry else "Registro de Militares Fallecidos" }}</h1>
+  <h1>{{ registry_title }}</h1>
   {% if health_registry %}
     <p>{% if current_actor.role == "admin" %}Consolidado exclusivo de centros de salud.{% else %}Centro de salud: <strong>{{ current_actor.center_name }}</strong>. Registro independiente del envío semanal; solo puedes consultar tus registros.{% endif %}</p>
   {% elif current_actor.role == "admin" %}
@@ -31,7 +32,7 @@
         </select>
       </label>
     {% endif %}
-    <label>Mes de fallecimiento
+    <label>{{ "Mes de atención" if traffic_registry else "Mes de fallecimiento" }}
       <select name="month">
         <option value="">Todos los meses</option>
         {% for label in months %}
@@ -39,7 +40,7 @@
         {% endfor %}
       </select>
     </label>
-    <label>Año de fallecimiento
+    <label>{{ "Año de atención" if traffic_registry else "Año de fallecimiento" }}
       <select name="year">
         <option value="">Todos los años</option>
         {% for option in years %}
@@ -55,9 +56,9 @@
         {% endfor %}
       </select>
     </label>
-    <label>Causa de fallecimiento del reporte
+    <label>{{ "Tipo de accidente del reporte" if traffic_registry else "Causa de fallecimiento del reporte" }}
       <select name="cause">
-        <option value="">Todas las causas</option>
+        <option value="">{{ "Todos los tipos" if traffic_registry else "Todas las causas" }}</option>
         {% for cause in military_causes %}
           <option value="{{ cause }}" {% if selected_cause == cause %}selected{% endif %}>{{ cause }}</option>
         {% endfor %}
@@ -86,18 +87,28 @@
     <label>NOMBRE Y APELLIDOS<input class="uppercase-field" name="full_name" maxlength="160" required></label>
     <label>CÉDULA<input name="cedula" maxlength="32" required></label>
     <label>FECHA NACIMIENTO<input name="birth_date" type="date" required></label>
-    <label>FECHA DE LA MUERTE<input name="death_date" type="date" required></label>
-    <label>CAUSAS DE LA MUERTE<select name="cause" required>
-      <option value="">Selecciona una causa</option>
+    <label>{{ "FECHA DE ATENCIÓN" if traffic_registry else "FECHA DE LA MUERTE" }}<input name="{{ 'attention_date' if traffic_registry else 'death_date' }}" type="date" required></label>
+    <label>{{ "TIPO DE ACCIDENTE" if traffic_registry else "CAUSAS DE LA MUERTE" }}<select name="{{ 'accident_type' if traffic_registry else 'cause' }}" required>
+      <option value="">{{ "Selecciona un tipo" if traffic_registry else "Selecciona una causa" }}</option>
       {% for cause in military_causes %}<option value="{{ cause }}">{{ cause }}</option>{% endfor %}
     </select></label>
+    {% if traffic_registry %}
+      <label>CONDICIÓN<select name="patient_condition" required>
+        <option value="">Selecciona la condición</option>
+        {% for condition in traffic_conditions %}<option value="{{ condition }}">{{ condition }}</option>{% endfor %}
+      </select></label>
+      <label>PARTICIPACIÓN<select name="traffic_role" required>
+        <option value="">Selecciona la participación</option>
+        {% for role in traffic_roles %}<option value="{{ role }}">{{ role }}</option>{% endfor %}
+      </select></label>
+    {% endif %}
     <label>REDI<select name="redi" required>
       <option value="">Selecciona una REDI</option>
       {% for redi in military_redi %}<option value="{{ redi }}">{{ redi }}</option>{% endfor %}
     </select></label>
     <label>ZODI<input class="uppercase-field" name="zodi" maxlength="120" required></label>
     <label>UNIDAD<input class="uppercase-field" name="unit" maxlength="160" required></label>
-    <p>La edad se calcula automáticamente según las fechas de nacimiento y fallecimiento.</p>
+    <p>La edad se calcula automáticamente según las fechas de nacimiento y {{ "atención" if traffic_registry else "fallecimiento" }}.</p>
     <button class="button button-primary" type="submit">Ingresar registro</button>
   </form>
 </section>
@@ -112,14 +123,16 @@
         <thead><tr>
           <th>NRO.</th><th>GDO/JQUIA</th><th>NOMBRE Y APELLIDOS</th>
           <th>CEDULA</th><th>FECHA NAC.</th><th>EDAD</th>
-          <th>FECHA DE LA MUERTE</th><th>CAUSAS DE LA MUERTE</th>
+          <th>{{ "FECHA DE ATENCIÓN" if traffic_registry else "FECHA DE LA MUERTE" }}</th><th>{{ "TIPO DE ACCIDENTE" if traffic_registry else "CAUSAS DE LA MUERTE" }}</th>
+          {% if traffic_registry %}<th>CONDICIÓN</th><th>PARTICIPACIÓN</th>{% endif %}
           <th>REDI</th><th>ZODI</th><th>UNIDAD</th>
           {% if health_registry %}<th>COMPONENTE</th><th>CENTRO DE SALUD</th>{% endif %}
         </tr></thead>
         <tbody>{% for record in component_records %}<tr>
           <td>{{ loop.index }}</td><td>{{ record.grade }}</td><td>{{ record.full_name }}</td>
           <td>{{ record.cedula }}</td><td>{{ record.birth_date }}</td><td>{{ record.age }}</td>
-          <td>{{ record.death_date }}</td><td>{{ record.cause }}</td>
+          <td>{{ record.attention_date if traffic_registry else record.death_date }}</td><td>{{ record.accident_type if traffic_registry else record.cause }}</td>
+          {% if traffic_registry %}<td>{{ record.patient_condition }}</td><td>{{ record.traffic_role }}</td>{% endif %}
           <td>{{ record.redi }}</td><td>{{ record.zodi }}</td><td>{{ record.unit }}</td>
           {% if health_registry %}<td>{{ record.component }}</td><td>{{ record.center_name }}</td>{% endif %}
         </tr>{% endfor %}</tbody>
