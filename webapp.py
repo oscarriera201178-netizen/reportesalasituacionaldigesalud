@@ -407,15 +407,20 @@ def create_app(store=None, *, secret_key=None):
             abort(400, "Causa de fallecimiento no válida.")
         filters["redi"] = selected_redi
         filters["cause"] = selected_cause
+        available_records = get_store().military_records(token())
+        years = {int(record["death_date"][:4]) for record in available_records}
+        years.add(datetime.now(REPORT_TIMEZONE).year)
+        if filters["year"] is not None:
+            years.add(filters["year"])
         records = [
-            record for record in get_store().military_records(token())
+            record for record in available_records
             if (selected_component is None or record["component"] == selected_component)
             and (filters["month"] is None or int(record["death_date"][5:7]) == filters["month"])
             and (filters["year"] is None or int(record["death_date"][:4]) == filters["year"])
             and (selected_redi is None or record["redi"] == selected_redi)
             and (selected_cause is None or record["cause"] == selected_cause)
         ]
-        return records, selected_component, filters
+        return records, selected_component, filters, sorted(years, reverse=True)
 
     @app.get("/military")
     def military_report():
@@ -424,14 +429,14 @@ def create_app(store=None, *, secret_key=None):
             return current_actor or redirect(url_for("login"))
         if current_actor["role"] != "admin" and current_actor["account_type"] != "military":
             abort(403)
-        records, selected_component, filters = filtered_military_records(current_actor)
+        records, selected_component, filters, years = filtered_military_records(current_actor)
         return render_template(
             "military_records.html", records=records,
             military_grades=MILITARY_GRADES, military_causes=MILITARY_CAUSES,
             military_redi=MILITARY_REDI, military_components=MILITARY_COMPONENTS,
             selected_component=selected_component, month=filters["month"],
             year=filters["year"], selected_redi=filters["redi"],
-            selected_cause=filters["cause"],
+            selected_cause=filters["cause"], years=years,
             months=(
                 "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
                 "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
@@ -462,7 +467,7 @@ def create_app(store=None, *, secret_key=None):
             return current_actor or redirect(url_for("login"))
         if current_actor["role"] != "admin" and current_actor["account_type"] != "military":
             abort(403)
-        records, selected_component, _filters = filtered_military_records(current_actor)
+        records, selected_component, _filters, _years = filtered_military_records(current_actor)
         pdf = generate_military_pdf(
             records, component=selected_component,
         )

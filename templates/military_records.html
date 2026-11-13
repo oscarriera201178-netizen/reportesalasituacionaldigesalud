@@ -35,7 +35,12 @@
       </select>
     </label>
     <label>Año de fallecimiento
-      <input name="year" type="number" min="1" max="9999" value="{{ year or '' }}" placeholder="Todos los años">
+      <select name="year">
+        <option value="">Todos los años</option>
+        {% for option in years %}
+          <option value="{{ option }}" {% if year == option %}selected{% endif %}>{{ option }}</option>
+        {% endfor %}
+      </select>
     </label>
     <label>REDI del reporte
       <select name="redi">
@@ -60,6 +65,7 @@
 {% if current_actor.role != "admin" %}
 <section class="panel">
   <h2>Ingresar registro</h2>
+  <p>Todos los campos son obligatorios. El registro no se guardará si falta algún dato.</p>
   <form method="post" class="form-grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <label>GDO/JQUIA<select name="grade" required>

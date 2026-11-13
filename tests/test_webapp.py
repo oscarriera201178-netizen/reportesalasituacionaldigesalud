@@ -346,7 +346,10 @@ class HtmlApplicationTests(unittest.TestCase):
         self.assertNotIn(b"OTRO MES", page.data)
         self.assertNotIn("OTRO AÑO".encode(), page.data)
         self.assertIn(b'value="10" selected', page.data)
-        self.assertIn(b'value="2026"', page.data)
+        year_select = re.search(rb'<select name="year">(.*?)</select>', page.data, re.S).group(1)
+        self.assertIn(b'value="2026" selected', year_select)
+        self.assertIn(b'value="2025"', year_select)
+        self.assertEqual(year_select.count(b'value="2026"'), 1)
         for path in ("/military", "/military/report.pdf"):
             for invalid in ("?month=13", "?month=abc", "?year=0", "?year=10000"):
                 with self.subTest(path=path, invalid=invalid):
@@ -411,6 +414,39 @@ class HtmlApplicationTests(unittest.TestCase):
             for invalid in ({"redi": "REDI inexistente"}, {"cause": "Causa inexistente"}):
                 with self.subTest(path=path, invalid=invalid):
                     self.assertEqual(self.client.get(path, query_string=invalid).status_code, 400)
+
+    def test_military_registration_rejects_each_missing_or_blank_required_field(self):
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        self.login("guardia", CENTER_PASSWORD)
+        csrf = self.authenticated_csrf()
+        fields = {
+            "grade": "TTE", "full_name": "PERSONA DE PRUEBA", "cedula": "V-12345678",
+            "birth_date": "1990-01-01", "death_date": "2026-10-15",
+            "cause": "Muerte natural", "redi": "REDI Capital",
+            "zodi": "ZODI CAPITAL", "unit": "UNIDAD DE PRUEBA",
+        }
+        for field in fields:
+            for value in (None, "", "   "):
+                with self.subTest(field=field, value=value):
+                    payload = {"csrf_token": csrf, **fields}
+                    if value is None:
+                        del payload[field]
+                    else:
+                        payload[field] = value
+                    response = self.client.post(
+                        "/military", data=payload,
+                        headers={"Referer": "http://localhost/military"},
+                    )
+                    self.assertEqual(response.status_code, 303)
+                    page = self.client.get(response.headers["Location"])
+                    self.assertIn(b"notice-error", page.data)
+                    self.assertNotIn(b"Registro ingresado.", page.data)
+                    self.assertEqual(self.store.military_records(self.admin_token), [])
+        response = self.client.post("/military", data={"csrf_token": csrf, **fields})
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(self.store.military_records(self.admin_token)), 1)
 
     def test_forced_password_change_requires_confirmation(self):
         with self.store.transaction() as connection:
