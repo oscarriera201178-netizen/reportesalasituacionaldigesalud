@@ -271,6 +271,7 @@ class HtmlApplicationTests(unittest.TestCase):
         import pymupdf
         with pymupdf.open(stream=military_pdf.data, filetype="pdf") as document:
             pdf_text = document[0].get_text()
+            has_banner = bool(document[0].get_xobjects())
         self.assertIn("Registro de Militares Fallecidos en el Componente Guardia Nacional Bolivariana", pdf_text)
         for heading in (
             "NRO.", "GDO/JQUIA", "NOMBRE Y APELLIDOS", "CEDULA",
@@ -279,14 +280,137 @@ class HtmlApplicationTests(unittest.TestCase):
         ):
             self.assertIn(heading, pdf_text)
         self.assertIn("PERSONA FALLECIDA", pdf_text)
+        self.assertIn("FUENTE: Sala Situacional/DIGESALUD", pdf_text)
+        self.assertTrue(has_banner)
 
         self.assertEqual(self.client.get("/military").status_code, 200)
-        self.assertIn(b"PERSONA FALLECIDA", self.client.get("/military").data)
-        self.assertEqual(self.client.get("/military/report.pdf").mimetype, "application/pdf")
+        admin_page = self.client.get("/military")
+        self.assertIn(b"PERSONA FALLECIDA", admin_page.data)
+        self.assertIn(b"Todos los componentes", admin_page.data)
+        self.assertIn(b"Aviaci\xc3\xb3n Militar Bolivariana", admin_page.data)
+
+        self.store.create_military_account(
+            self.admin_token, "Ejército Bolivariano", "ejercito", CENTER_PASSWORD,
+        )
+        army = self.store.login("ejercito", CENTER_PASSWORD)
+        self.store.add_military_record(
+            army, "GJ", "OTRO MILITAR", "V-87654321", "1980-01-01",
+            "2020-01-01", "Homicidio", "REDI Central", "ZODI DOS", "UNIDAD DOS",
+        )
+        selected_pdf = self.client.get(
+            "/military/report.pdf?component=Ej%C3%A9rcito+Bolivariano",
+        )
+        self.assertEqual(selected_pdf.mimetype, "application/pdf")
+        with pymupdf.open(stream=selected_pdf.data, filetype="pdf") as document:
+            self.assertEqual(len(document), 1)
+            selected_text = document[0].get_text()
+        self.assertIn("Ejército Bolivariano", selected_text)
+        self.assertIn("OTRO MILITAR", selected_text)
+        self.assertNotIn("PERSONA FALLECIDA", selected_text)
+
+        all_pdf = self.client.get("/military/report.pdf")
+        with pymupdf.open(stream=all_pdf.data, filetype="pdf") as document:
+            self.assertEqual(len(document), 5)
+            all_text = "\n".join(page.get_text() for page in document)
+        self.assertIn("PERSONA FALLECIDA", all_text)
+        self.assertIn("OTRO MILITAR", all_text)
+        self.assertIn("FUENTE: Sala Situacional/DIGESALUD", all_text)
+        invalid_pdf = self.client.get("/military/report.pdf?component=Desconocido")
+        self.assertEqual(invalid_pdf.status_code, 400)
         self.assertEqual(
             self.client.get(f"/admin/accounts").status_code,
             200,
         )
+
+    def test_military_search_filters_screen_and_pdf_by_death_month_and_year(self):
+        import pymupdf
+
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        military_token = self.store.login("guardia", CENTER_PASSWORD)
+        for name, death_date in (
+            ("COINCIDE", "2026-10-15"),
+            ("OTRO MES", "2026-11-15"),
+            ("OTRO AÑO", "2025-10-15"),
+        ):
+            self.store.add_military_record(
+                military_token, "TTE", name, "V-12345678", "1990-01-01",
+                death_date, "Muerte natural", "REDI Capital", "ZODI", "UNIDAD",
+            )
+        self.login("admin", ADMIN_PASSWORD)
+        query = "?month=10&year=2026"
+        page = self.client.get("/military" + query)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"COINCIDE", page.data)
+        self.assertNotIn(b"OTRO MES", page.data)
+        self.assertNotIn("OTRO AÑO".encode(), page.data)
+        self.assertIn(b'value="10" selected', page.data)
+        self.assertIn(b'value="2026"', page.data)
+        for path in ("/military", "/military/report.pdf"):
+            for invalid in ("?month=13", "?month=abc", "?year=0", "?year=10000"):
+                with self.subTest(path=path, invalid=invalid):
+                    self.assertEqual(self.client.get(path + invalid).status_code, 400)
+        pdf = self.client.get("/military/report.pdf" + query)
+        self.assertEqual(pdf.status_code, 200)
+        with pymupdf.open(stream=pdf.data, filetype="pdf") as document:
+            text = "\n".join(page.get_text() for page in document)
+        self.assertIn("COINCIDE", text)
+        self.assertNotIn("OTRO MES", text)
+        self.assertNotIn("OTRO AÑO", text)
+        month_only = self.client.get("/military?month=10")
+        self.assertIn("OTRO AÑO".encode(), month_only.data)
+        self.assertNotIn(b"OTRO MES", month_only.data)
+        year_only = self.client.get("/military?year=2026")
+        self.assertIn(b"OTRO MES", year_only.data)
+        self.assertNotIn("OTRO AÑO".encode(), year_only.data)
+
+    def test_military_search_combines_redi_and_cause_with_existing_filters(self):
+        import pymupdf
+
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        military_token = self.store.login("guardia", CENTER_PASSWORD)
+        for name, redi, cause, death_date in (
+            ("COINCIDE", "REDI Capital", "Homicidio", "2026-10-15"),
+            ("OTRA REDI", "REDI Central", "Homicidio", "2026-10-15"),
+            ("OTRA CAUSA", "REDI Capital", "Muerte natural", "2026-10-15"),
+            ("OTRO PERIODO", "REDI Capital", "Homicidio", "2025-11-15"),
+        ):
+            self.store.add_military_record(
+                military_token, "TTE", name, "V-12345678", "1990-01-01",
+                death_date, cause, redi, "ZODI", "UNIDAD",
+            )
+        self.login("admin", ADMIN_PASSWORD)
+        filters = {
+            "component": "Guardia Nacional Bolivariana",
+            "month": "10", "year": "2026", "redi": "REDI Capital", "cause": "Homicidio",
+        }
+        page = self.client.get("/military", query_string=filters)
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"COINCIDE", page.data)
+        for excluded in (b"OTRA REDI", b"OTRA CAUSA", b"OTRO PERIODO"):
+            self.assertNotIn(excluded, page.data)
+        self.assertIn(b'value="REDI Capital" selected', page.data)
+        self.assertIn(b'value="Homicidio" selected', page.data)
+        pdf = self.client.get("/military/report.pdf", query_string=filters)
+        self.assertEqual(pdf.status_code, 200)
+        with pymupdf.open(stream=pdf.data, filetype="pdf") as document:
+            text = "\n".join(page.get_text() for page in document)
+        self.assertIn("COINCIDE", text)
+        for excluded in ("OTRA REDI", "OTRA CAUSA", "OTRO PERIODO"):
+            self.assertNotIn(excluded, text)
+        redi_only = self.client.get("/military", query_string={"redi": "REDI Capital"})
+        self.assertIn(b"OTRA CAUSA", redi_only.data)
+        self.assertNotIn(b"OTRA REDI", redi_only.data)
+        cause_only = self.client.get("/military", query_string={"cause": "Homicidio"})
+        self.assertIn(b"OTRA REDI", cause_only.data)
+        self.assertNotIn(b"OTRA CAUSA", cause_only.data)
+        for path in ("/military", "/military/report.pdf"):
+            for invalid in ({"redi": "REDI inexistente"}, {"cause": "Causa inexistente"}):
+                with self.subTest(path=path, invalid=invalid):
+                    self.assertEqual(self.client.get(path, query_string=invalid).status_code, 400)
 
     def test_forced_password_change_requires_confirmation(self):
         with self.store.transaction() as connection:

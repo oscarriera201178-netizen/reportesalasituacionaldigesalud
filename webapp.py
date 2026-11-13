@@ -383,6 +383,40 @@ def create_app(store=None, *, secret_key=None):
             abort(400, "Acción no válida.")
         return redirect(url_for("accounts"))
 
+    def filtered_military_records(current_actor):
+        selected_component = request.args.get("component") or None
+        if current_actor["role"] != "admin":
+            selected_component = current_actor["center_name"]
+        elif selected_component is not None and selected_component not in MILITARY_COMPONENTS:
+            abort(400, "Componente militar no válido.")
+        filters = {}
+        for field, label, maximum in (("month", "Mes", 12), ("year", "Año", 9999)):
+            raw = request.args.get(field, "")
+            try:
+                value = int(raw) if raw else None
+            except ValueError:
+                abort(400, f"{label} no válido.")
+            if value is not None and not 1 <= value <= maximum:
+                abort(400, f"{label} no válido.")
+            filters[field] = value
+        selected_redi = request.args.get("redi") or None
+        selected_cause = request.args.get("cause") or None
+        if selected_redi is not None and selected_redi not in MILITARY_REDI:
+            abort(400, "REDI no válida.")
+        if selected_cause is not None and selected_cause not in MILITARY_CAUSES:
+            abort(400, "Causa de fallecimiento no válida.")
+        filters["redi"] = selected_redi
+        filters["cause"] = selected_cause
+        records = [
+            record for record in get_store().military_records(token())
+            if (selected_component is None or record["component"] == selected_component)
+            and (filters["month"] is None or int(record["death_date"][5:7]) == filters["month"])
+            and (filters["year"] is None or int(record["death_date"][:4]) == filters["year"])
+            and (selected_redi is None or record["redi"] == selected_redi)
+            and (selected_cause is None or record["cause"] == selected_cause)
+        ]
+        return records, selected_component, filters
+
     @app.get("/military")
     def military_report():
         current_actor = require_role()
@@ -390,11 +424,18 @@ def create_app(store=None, *, secret_key=None):
             return current_actor or redirect(url_for("login"))
         if current_actor["role"] != "admin" and current_actor["account_type"] != "military":
             abort(403)
-        records = get_store().military_records(token())
+        records, selected_component, filters = filtered_military_records(current_actor)
         return render_template(
             "military_records.html", records=records,
             military_grades=MILITARY_GRADES, military_causes=MILITARY_CAUSES,
-            military_redi=MILITARY_REDI,
+            military_redi=MILITARY_REDI, military_components=MILITARY_COMPONENTS,
+            selected_component=selected_component, month=filters["month"],
+            year=filters["year"], selected_redi=filters["redi"],
+            selected_cause=filters["cause"],
+            months=(
+                "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+                "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
+            ),
         )
 
     @app.post("/military")
@@ -421,10 +462,9 @@ def create_app(store=None, *, secret_key=None):
             return current_actor or redirect(url_for("login"))
         if current_actor["role"] != "admin" and current_actor["account_type"] != "military":
             abort(403)
-        records = get_store().military_records(token())
+        records, selected_component, _filters = filtered_military_records(current_actor)
         pdf = generate_military_pdf(
-            records,
-            component=None if current_actor["role"] == "admin" else current_actor["center_name"],
+            records, component=selected_component,
         )
         return send_file(
             io.BytesIO(pdf), as_attachment=True,

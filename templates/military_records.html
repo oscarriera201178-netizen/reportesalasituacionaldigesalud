@@ -15,7 +15,47 @@
   {% else %}
     <p>Registro de Militares Fallecidos en el Componente <strong>{{ current_actor.center_name }}</strong>. Solo puedes consultar los registros de tu institución.</p>
   {% endif %}
-  <a class="button button-primary" href="{{ url_for('download_military_report') }}">Generar reporte PDF</a>
+  <form method="get" action="{{ url_for('military_report') }}" class="filter-grid">
+    {% if current_actor.role == "admin" %}
+      <label>Componente del reporte
+        <select name="component">
+          <option value="">Todos los componentes</option>
+          {% for component in military_components %}
+            <option value="{{ component }}" {% if selected_component == component %}selected{% endif %}>{{ component }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endif %}
+    <label>Mes de fallecimiento
+      <select name="month">
+        <option value="">Todos los meses</option>
+        {% for label in months %}
+          <option value="{{ loop.index }}" {% if month == loop.index %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Año de fallecimiento
+      <input name="year" type="number" min="1" max="9999" value="{{ year or '' }}" placeholder="Todos los años">
+    </label>
+    <label>REDI del reporte
+      <select name="redi">
+        <option value="">Todas las REDI</option>
+        {% for redi in military_redi %}
+          <option value="{{ redi }}" {% if selected_redi == redi %}selected{% endif %}>{{ redi }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>Causa de fallecimiento del reporte
+      <select name="cause">
+        <option value="">Todas las causas</option>
+        {% for cause in military_causes %}
+          <option value="{{ cause }}" {% if selected_cause == cause %}selected{% endif %}>{{ cause }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <button class="button button-muted" type="submit">Buscar</button>
+    <button class="button button-primary" type="submit" formaction="{{ url_for('download_military_report') }}">Generar reporte PDF</button>
+  </form>
 </section>
 {% if current_actor.role != "admin" %}
 <section class="panel">

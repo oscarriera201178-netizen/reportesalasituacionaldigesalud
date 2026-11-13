@@ -277,6 +277,10 @@ listas; nombre, ZODI y unidad se guardan en mayúsculas, y las fechas usan el
 selector de calendario. Los registros se pueden consultar y descargar en PDF,
 pero no editar. Cada institución solo ve sus registros y administración puede
 consultar el consolidado.
+La búsqueda permite combinar filtros por REDI, causa, mes y año de fallecimiento y, para
+administración, por componente o todos los componentes. Los mismos filtros se
+aplican al PDF, que incluye cintillo institucional, fuente y fecha de generación
+en cada página.
 
 Cada centro accede a su inventario con la clave asignada por el administrador;
 solo el administrador puede cambiarla desde **Cuentas de centros**.

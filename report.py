@@ -337,12 +337,17 @@ def generate_military_pdf(records, component=None):
 
             def new_page():
                 page = doc.new_page(width=960, height=540)
+                with pymupdf.open(Path(__file__).with_name("cintillo.pdf")) as banner:
+                    page.show_pdf_page(
+                        pymupdf.Rect(36, 8, 924, 96), banner, 0,
+                        clip=pymupdf.Rect(0, 0, 960, 95),
+                    )
                 _text(
-                    page, pymupdf.Rect(28, 62, 932, 96),
+                    page, pymupdf.Rect(28, 104, 932, 135),
                     f"Registro de Militares Fallecidos en el Componente {name}",
-                    18, True,
+                    16, True,
                 )
-                x, y = left, 118
+                x, y = left, 145
                 for header, width in zip(headers, widths):
                     _cell(page, x, y, width, 31, header, bold=True, size=7)
                     x += width
@@ -373,11 +378,23 @@ def generate_military_pdf(records, component=None):
                     record["cause"], record["redi"], record["zodi"], record["unit"],
                 ) if record else ("",) * len(headers)
                 height = row_height(values)
-                if y + height > 520:
+                if y + height > 482:
                     page, y = new_page()
                 x = left
                 for value, width in zip(values, widths):
                     _cell(page, x, y, width, height, value, size=7)
                     x += width
                 y += height
+        timestamp = datetime.now(REPORT_TIMEZONE).strftime(
+            "Generado: %d/%m/%Y %H:%M (hora de Venezuela)",
+        )
+        for page_number, page in enumerate(doc, 1):
+            _text(
+                page, pymupdf.Rect(36, 490, 924, 505),
+                "FUENTE: Sala Situacional/DIGESALUD", 9, align=0,
+            )
+            _text(
+                page, pymupdf.Rect(36, 506, 924, 521),
+                f"{timestamp} | Página {page_number}/{len(doc)}", 8, align=0,
+            )
         return doc.tobytes(garbage=4, deflate=True)
