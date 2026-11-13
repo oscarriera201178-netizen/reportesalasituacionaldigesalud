@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% block title %}Registros de Pacientes Militares · DIGESALUD-MPPD{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>Registros de Pacientes Militares</h1>
+  <nav class="category-nav" aria-label="Registros de Pacientes Militares">
+    <a class="button button-primary" href="{{ url_for('health_military_report') }}">Militares Fallecidos en Centros de Salud</a>
+    <a class="button button-primary" href="{{ url_for('traffic_report') }}">Militares atendidos por accidentes de Tránsito</a>
+  </nav>
+  <a class="button button-muted" href="{{ url_for('home') }}">Regresar</a>
+</section>
+{% endblock %}

@@ -383,6 +383,15 @@ def create_app(store=None, *, secret_key=None):
             abort(400, "Acción no válida.")
         return redirect(url_for("accounts"))
 
+    @app.get("/health/patients")
+    def military_patient_records():
+        current_actor = require_role()
+        if not isinstance(current_actor, dict):
+            return current_actor or redirect(url_for("login"))
+        if current_actor["role"] != "admin" and current_actor["account_type"] != "health":
+            abort(403)
+        return render_template("military_patient_records.html")
+
     def filtered_military_records(current_actor, *, health_registry=False, traffic_registry=False):
         selected_component = request.args.get("component") or None
         if current_actor["role"] != "admin" and not health_registry:

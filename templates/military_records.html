@@ -2,6 +2,9 @@
 {% set registry_title = "Militares atendidos por accidentes de Tránsito" if traffic_registry else ("Militares Fallecidos en Centros de Salud" if health_registry else "Registro de Militares Fallecidos") %}
 {% block title %}{{ registry_title }} · DIGESALUD-MPPD{% endblock %}
 {% block content %}
+{% if health_registry %}
+  <a class="button button-muted" href="{{ url_for('military_patient_records') }}">Regresar</a>
+{% endif %}
 {% if not health_registry or current_actor.role == "admin" %}
 <div class="admin-nav">
   {% if current_actor.role == "admin" %}

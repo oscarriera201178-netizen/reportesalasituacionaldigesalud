@@ -65,6 +65,42 @@ class HtmlApplicationTests(unittest.TestCase):
             rb'name="csrf_token" value="([^"]+)"', page.data,
         ).group(1).decode()
 
+    def test_military_patient_menu_groups_registries_and_returns_to_previous_menu(self):
+        response = self.client.get("/health/patients")
+        self.assertEqual(response.status_code, 302)
+        self.assertIn("/login", response.headers["Location"])
+        self.login("norte", CENTER_PASSWORD)
+        for token, home_path in (
+            (self.store.login("norte", CENTER_PASSWORD), f"/inventory/{self.center['id']}"),
+            (self.admin_token, "/"),
+        ):
+            with self.subTest(home=home_path):
+                with self.client.session_transaction() as browser_session:
+                    browser_session["token"] = token
+                home = self.client.get(home_path)
+                self.assertIn(b'href="/health/patients"', home.data)
+                self.assertNotIn(b'href="/health/military"', home.data)
+                self.assertNotIn(b'href="/health/traffic"', home.data)
+                menu = self.client.get("/health/patients")
+                self.assertEqual(menu.status_code, 200)
+                self.assertIn(b"<h1>Registros de Pacientes Militares</h1>", menu.data)
+                self.assertIn(b'href="/">Regresar</a>', menu.data)
+                response = self.client.get("/", follow_redirects=True)
+                self.assertEqual(response.status_code, 200)
+                self.assertEqual(response.request.path, home_path)
+                for path in ("/health/military", "/health/traffic"):
+                    self.assertIn(f'href="{path}"'.encode(), menu.data)
+                    page = self.client.get(path)
+                    self.assertEqual(page.status_code, 200)
+                    self.assertIn(b'href="/health/patients">Regresar</a>', page.data)
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = self.store.login("guardia", CENTER_PASSWORD)
+        self.assertEqual(self.client.get("/health/patients").status_code, 403)
+        self.assertNotIn(b'href="/health/patients"', self.client.get("/military").data)
+
     def test_inventory_requires_login_and_limits_center_access(self):
         response = self.client.get(f"/inventory/{self.center['id']}")
         self.assertEqual(response.status_code, 302)
@@ -515,8 +551,7 @@ class HtmlApplicationTests(unittest.TestCase):
         self.login("norte", CENTER_PASSWORD)
         csrf = self.authenticated_csrf()
         inventory_page = self.client.get(f"/inventory/{self.center['id']}")
-        self.assertIn(b'href="/health/military"', inventory_page.data)
-        self.assertIn(b"Militares Fallecidos en Centros de Salud", inventory_page.data)
+        self.assertIn(b'href="/health/patients"', inventory_page.data)
         health_page = self.client.get("/health/military")
         self.assertEqual(health_page.status_code, 200)
         self.assertIn(b"<h1>Militares Fallecidos en Centros de Salud</h1>", health_page.data)
@@ -593,8 +628,7 @@ class HtmlApplicationTests(unittest.TestCase):
         self.login("norte", CENTER_PASSWORD)
         csrf = self.authenticated_csrf()
         inventory = self.client.get(f"/inventory/{self.center['id']}")
-        self.assertIn(b'href="/health/traffic"', inventory.data)
-        self.assertIn("Militares atendidos por accidentes de Tránsito".encode(), inventory.data)
+        self.assertIn(b'href="/health/patients"', inventory.data)
         page = self.client.get("/health/traffic")
         self.assertEqual(page.status_code, 200)
         self.assertIn("<h1>Militares atendidos por accidentes de Tránsito</h1>".encode(), page.data)

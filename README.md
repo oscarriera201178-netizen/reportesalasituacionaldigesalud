@@ -317,7 +317,12 @@ tipo de accidente. Los mismos filtros se aplican al PDF con cintillo y pie de
 letra institucional. Estos registros no se mezclan con los de fallecidos:
 seleccionar **Fallecido** no crea automáticamente un registro de fallecimiento.
 
-Al ingresar a cualquiera de estos dos ítems, los centros ven únicamente el
+Ambos registros se encuentran dentro de **Registros de Pacientes Militares**,
+disponible en el menú del centro y en administración. El botón **Regresar** de
+cada registro vuelve a ese menú; el del menú agrupado vuelve al inventario del
+centro o a los informes de administración, según la cuenta.
+
+Al ingresar a cualquiera de estos dos registros, los centros ven únicamente el
 formulario de ingreso y sus registros guardados, sin buscador ni controles de
 generación de PDF. Administración conserva los filtros y la descarga de los
 consolidados.
