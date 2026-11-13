@@ -1,19 +1,22 @@
 {% extends "base.html" %}
-{% set menu_title = "Registros de Militares" if current_actor.role == "admin" else "Registros de Pacientes Militares" %}
+{% set component_menu = current_actor.account_type == "military" %}
+{% set menu_title = "Registros de Militares" if current_actor.role == "admin" or component_menu else "Registros de Pacientes Militares" %}
 {% block title %}{{ menu_title }} · DIGESALUD-MPPD{% endblock %}
 {% block content %}
 <section class="panel">
   <h1>{{ menu_title }}</h1>
   <nav class="category-nav" aria-label="{{ menu_title }}">
-    {% if current_actor.role == "admin" %}
+    {% if current_actor.role == "admin" or component_menu %}
       <a class="button button-primary" href="{{ url_for('military_report') }}">Militares fallecidos</a>
     {% endif %}
+    {% if not component_menu %}
     <a class="button button-primary" href="{{ url_for('health_military_report') }}">Militares Fallecidos en Centros de Salud</a>
     <a class="button button-primary" href="{{ url_for('traffic_report') }}">{{ "Militares Atendidos en Centros de Salud por Accidentes de Tránsito" if current_actor.role == "admin" else "Militares atendidos por accidentes de Tránsito" }}</a>
-    {% if current_actor.role == "admin" %}
+    {% endif %}
+    {% if current_actor.role == "admin" or component_menu %}
       <a class="button button-primary" href="{{ url_for('component_traffic_report') }}">Militares Involucrados en Accidentes de Tránsito</a>
     {% endif %}
   </nav>
-  <a class="button button-muted" href="{{ url_for('home') }}">Regresar</a>
+  {% if not component_menu %}<a class="button button-muted" href="{{ url_for('home') }}">Regresar</a>{% endif %}
 </section>
 {% endblock %}

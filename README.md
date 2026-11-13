@@ -325,6 +325,10 @@ fallecidos en centros de salud, atendidos en centros por accidentes de tránsito
 e involucrados en accidentes de tránsito (componentes). El botón **Regresar**
 de cada reporte vuelve al menú correspondiente; el del menú agrupado vuelve al
 inventario del centro o a los informes de administración, según la cuenta.
+Dentro de los reportes, el único acceso de navegación es **Regresar**; no se
+muestran accesos a cuentas, informes ni otros reportes. Los filtros y formularios
+propios de cada reporte se conservan. Las cuentas de componentes ingresan a un
+menú con sus dos registros y también regresan a ese menú desde cada reporte.
 
 **Militares Involucrados en Accidentes de Tránsito** solo permite ingresar datos
 a cuentas de componentes. Conserva los campos y las listas del registro de

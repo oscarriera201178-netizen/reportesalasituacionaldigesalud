@@ -224,7 +224,7 @@ def create_app(store=None, *, secret_key=None):
         if current_actor["role"] == "admin":
             return render_admin(get_store(), token())
         if current_actor["account_type"] == "military":
-            return redirect(url_for("military_report"))
+            return redirect(url_for("component_records_menu"))
         centers = get_store().centers(token())
         if not centers:
             abort(403, "La cuenta no tiene un centro asignado.")
@@ -386,6 +386,15 @@ def create_app(store=None, *, secret_key=None):
     @app.get("/admin/military")
     @admin_required
     def military_records_menu():
+        return render_template("military_patient_records.html")
+
+    @app.get("/military/records")
+    def component_records_menu():
+        current_actor = require_role("center")
+        if not isinstance(current_actor, dict):
+            return current_actor or redirect(url_for("login"))
+        if current_actor["account_type"] != "military":
+            abort(403)
         return render_template("military_patient_records.html")
 
     @app.get("/health/patients")

@@ -6,18 +6,10 @@
   <a class="button button-muted" href="{{ url_for('military_records_menu') }}">Regresar</a>
 {% elif health_registry %}
   <a class="button button-muted" href="{{ url_for('military_patient_records') }}">Regresar</a>
+{% else %}
+  <a class="button button-muted" href="{{ url_for('component_records_menu') }}">Regresar</a>
 {% endif %}
 {% if not health_registry or current_actor.role == "admin" %}
-<div class="admin-nav">
-  {% if current_actor.role == "admin" %}
-    <a class="button button-muted" href="{{ url_for('home') }}">Informes de centros</a>
-    <a class="button button-muted" href="{{ url_for('accounts') }}">Cuentas de centros</a>
-  {% endif %}
-  <a class="button button-primary" href="{{ url_for(report_endpoint) }}">{{ registry_title }}</a>
-  {% if current_actor.role != "admin" %}
-    <a class="button button-muted" href="{{ url_for('military_report' if traffic_registry else 'component_traffic_report') }}">{{ "Militares fallecidos" if traffic_registry else "Militares Involucrados en Accidentes de Tránsito" }}</a>
-  {% endif %}
-</div>
 <section class="panel">
   <h1>{{ registry_title }}</h1>
   {% if health_registry %}

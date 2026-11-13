@@ -94,15 +94,25 @@ class HtmlApplicationTests(unittest.TestCase):
                     page = self.client.get(path)
                     self.assertEqual(page.status_code, 200)
                     self.assertIn(f'href="{menu_path}">Regresar</a>'.encode(), page.data)
+                    self.assertNotIn(b'class="admin-nav"', page.data)
+                    links = re.findall(rb'<a class="button[^"]*" href="([^"]+)">', page.data)
+                    self.assertEqual(links, [menu_path.encode()])
                 if token == self.admin_token:
                     for path in ("/military", "/military/traffic"):
                         self.assertIn(f'href="{path}"'.encode(), menu.data)
+                        page = self.client.get(path)
+                        self.assertEqual(page.status_code, 200)
+                        links = re.findall(rb'<a class="button[^"]*" href="([^"]+)">', page.data)
+                        self.assertEqual(links, [b"/admin/military"])
+                        self.assertNotIn(b'class="admin-nav"', page.data)
+                        self.assertIn(b'class="filter-grid"', page.data)
                     self.assertIn(b"Militares fallecidos", menu.data)
                     self.assertIn("Militares Atendidos en Centros de Salud por Accidentes de Tránsito".encode(), menu.data)
                 else:
                     self.assertNotIn(b'href="/military"', menu.data)
                     self.assertNotIn(b'href="/military/traffic"', menu.data)
                     self.assertEqual(self.client.get("/admin/military").status_code, 403)
+                    self.assertEqual(self.client.get("/military/records").status_code, 403)
         self.store.create_military_account(
             self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
         )
@@ -111,6 +121,17 @@ class HtmlApplicationTests(unittest.TestCase):
         self.assertEqual(self.client.get("/health/patients").status_code, 403)
         self.assertEqual(self.client.get("/admin/military").status_code, 403)
         self.assertNotIn(b'href="/health/patients"', self.client.get("/military").data)
+        menu = self.client.get("/military/records")
+        self.assertEqual(menu.status_code, 200)
+        self.assertIn(b'href="/military"', menu.data)
+        self.assertIn(b'href="/military/traffic"', menu.data)
+        self.assertNotIn(b'href="/health/military"', menu.data)
+        self.assertNotIn(b'href="/health/traffic"', menu.data)
+        for path in ("/military", "/military/traffic"):
+            page = self.client.get(path)
+            self.assertNotIn(b'class="admin-nav"', page.data)
+            links = re.findall(rb'<a class="button[^"]*" href="([^"]+)">', page.data)
+            self.assertEqual(links, [b"/military/records"])
 
     def test_components_register_traffic_with_manual_attention_center_and_separate_consolidation(self):
         import pymupdf
@@ -125,7 +146,7 @@ class HtmlApplicationTests(unittest.TestCase):
         self.login("guardia", CENTER_PASSWORD)
         csrf = self.authenticated_csrf()
         death_page = self.client.get("/military")
-        self.assertIn(b'href="/military/traffic"', death_page.data)
+        self.assertIn(b'href="/military/records">Regresar</a>', death_page.data)
         page = self.client.get("/military/traffic")
         self.assertEqual(page.status_code, 200)
         self.assertIn("Militares Involucrados en Accidentes de Tránsito".encode(), page.data)
@@ -436,7 +457,7 @@ class HtmlApplicationTests(unittest.TestCase):
             "password": CENTER_PASSWORD,
         })
         self.assertEqual(login_response.status_code, 302)
-        self.assertEqual(military_client.get("/").headers["Location"], "/military")
+        self.assertEqual(military_client.get("/").headers["Location"], "/military/records")
         page = military_client.get("/military")
         self.assertEqual(page.status_code, 200)
         self.assertIn(b"Registro de Militares Fallecidos", page.data)
