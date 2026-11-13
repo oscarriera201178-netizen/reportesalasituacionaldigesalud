@@ -492,6 +492,88 @@ class HtmlApplicationTests(unittest.TestCase):
         self.assertEqual(response.status_code, 302)
         self.assertEqual(len(self.store.military_records(self.admin_token)), 1)
 
+    def test_health_centers_register_deaths_privately_with_a_separate_single_table_consolidated_pdf(self):
+        import pymupdf
+
+        self.store.create_center(
+            self.admin_token, "Centro Sur", "Sur", "sur", CENTER_PASSWORD,
+        )
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        guard = self.store.login("guardia", CENTER_PASSWORD)
+        south = self.store.login("sur", CENTER_PASSWORD)
+        self.store.add_military_record(
+            guard, "TTE", "REGISTRO COMPONENTE", "V-1", "1990-01-01",
+            "2026-10-15", "Muerte natural", "REDI Capital", "ZODI", "UNIDAD",
+        )
+        self.store.add_military_record(
+            south, "TTE", "FALLECIDO SUR", "V-2", "1990-01-01",
+            "2026-10-15", "Muerte natural", "REDI Capital", "ZODI", "UNIDAD",
+            component="Ejército Bolivariano",
+        )
+        self.login("norte", CENTER_PASSWORD)
+        csrf = self.authenticated_csrf()
+        inventory_page = self.client.get(f"/inventory/{self.center['id']}")
+        self.assertIn(b'href="/health/military"', inventory_page.data)
+        health_page = self.client.get("/health/military")
+        self.assertEqual(health_page.status_code, 200)
+        self.assertIn(b"Selecciona el componente", health_page.data)
+        self.assertNotIn(b"FALLECIDO SUR", health_page.data)
+        self.assertNotIn(b"REGISTRO COMPONENTE", health_page.data)
+        fields = {
+            "csrf_token": csrf, "grade": "CAP", "full_name": "FALLECIDO NORTE",
+            "cedula": "V-3", "birth_date": "1990-01-01", "death_date": "2026-11-15",
+            "cause": "Homicidio", "redi": "REDI Central", "zodi": "ZODI NORTE",
+            "unit": "UNIDAD", "component": "Armada Bolivariana",
+        }
+        for field in ("component", "grade", "full_name", "cedula", "birth_date",
+                      "death_date", "cause", "redi", "zodi", "unit"):
+            invalid = {**fields, field: ""}
+            response = self.client.post("/health/military", data=invalid)
+            self.assertEqual(response.status_code, 303, field)
+        before = self.store.submission(self.store.login("norte", CENTER_PASSWORD), self.center["id"])
+        response = self.client.post("/health/military", data=fields)
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(response.headers["Location"], "/health/military")
+        after = self.store.submission(self.store.login("norte", CENTER_PASSWORD), self.center["id"])
+        self.assertEqual(before, after)
+        private_page = self.client.get("/health/military?center_id=2")
+        self.assertIn(b"FALLECIDO NORTE", private_page.data)
+        self.assertNotIn(b"FALLECIDO SUR", private_page.data)
+        self.assertEqual(self.client.get("/military").status_code, 403)
+        north_pdf = self.client.get("/health/military/report.pdf")
+        self.assertEqual(north_pdf.status_code, 200)
+        with pymupdf.open(stream=north_pdf.data, filetype="pdf") as document:
+            text = document[0].get_text()
+        self.assertIn("Centro Norte", text)
+        self.assertNotIn("FALLECIDO SUR", text)
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = self.admin_token
+        consolidated = self.client.get("/health/military/report.pdf")
+        self.assertEqual(consolidated.status_code, 200)
+        with pymupdf.open(stream=consolidated.data, filetype="pdf") as document:
+            self.assertEqual(len(document), 1)
+            text = document[0].get_text()
+            self.assertTrue(document[0].get_xobjects())
+        for expected in ("FALLECIDO NORTE", "FALLECIDO SUR", "Centro Norte", "Centro Sur",
+                         "CENTRO DE SALUD", "COMPONENTE", "Armada Bolivariana",
+                         "Ejército Bolivariano", "FUENTE: Sala Situacional/DIGESALUD"):
+            self.assertIn(expected, " ".join(text.split()))
+        self.assertNotIn("REGISTRO COMPONENTE", text)
+        self.assertEqual(text.count("NRO."), 1)
+        filtered = self.client.get("/health/military?month=11&cause=Homicidio")
+        self.assertIn(b"FALLECIDO NORTE", filtered.data)
+        self.assertNotIn(b"FALLECIDO SUR", filtered.data)
+        component_report = self.client.get("/military")
+        self.assertIn(b"REGISTRO COMPONENTE", component_report.data)
+        self.assertNotIn(b"FALLECIDO NORTE", component_report.data)
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = guard
+        for path in ("/health/military", "/health/military/report.pdf"):
+            self.assertEqual(self.client.get(path).status_code, 403)
+        self.assertEqual(self.client.post("/health/military", data=fields).status_code, 403)
+
     def test_forced_password_change_requires_confirmation(self):
         with self.store.transaction() as connection:
             connection.execute(

@@ -44,24 +44,30 @@ class MilitaryReportLayoutTests(unittest.TestCase):
             "redi": "REDI Marítima e Insular", "zodi": "ZODI DE PRUEBA " * 8,
             "unit": "UNIDAD CON UNA DENOMINACION MUY EXTENSA " * 4,
         }
-        with pymupdf.open(
-            stream=generate_military_pdf([record] * 16), filetype="pdf",
-        ) as document:
-            self.assertGreater(len(document), 1)
-            recovered = []
-            for page in document:
-                self.assertTrue(page.get_xobjects())
-                self.assertIn("FUENTE: Sala Situacional/DIGESALUD", page.get_text())
-                words = page.get_text("words")
-                body = [word for word in words if 176 <= word[1] < 490]
-                self.assertTrue(body)
-                self.assertTrue(all(word[3] <= 482 for word in body))
-                self.assertTrue(all(28 <= word[0] < word[2] <= 932 for word in body))
-                recovered.append(" ".join(word[4] for word in body))
-            text = " ".join(recovered)
-            for key in ("full_name", "cause", "redi", "zodi", "unit"):
-                expected = " ".join(record[key].split())
-                self.assertEqual(text.count(expected), 16, key)
+        record["center_name"] = "CENTRO DE SALUD CON UNA DENOMINACION MUY EXTENSA " * 3
+        for health_registry in (False, True):
+            with self.subTest(health_registry=health_registry), pymupdf.open(
+                stream=generate_military_pdf([record] * 16, health_registry=health_registry),
+                filetype="pdf",
+            ) as document:
+                self.assertGreater(len(document), 1)
+                recovered = []
+                for page in document:
+                    self.assertTrue(page.get_xobjects())
+                    self.assertIn("FUENTE: Sala Situacional/DIGESALUD", page.get_text())
+                    words = page.get_text("words")
+                    body = [word for word in words if 176 <= word[1] < 490]
+                    self.assertTrue(body)
+                    self.assertTrue(all(word[3] <= 482 for word in body))
+                    self.assertTrue(all(28 <= word[0] < word[2] <= 932 for word in body))
+                    recovered.append(" ".join(word[4] for word in body))
+                text = " ".join(recovered)
+                keys = ("full_name", "cause", "redi", "zodi", "unit")
+                if health_registry:
+                    keys += ("center_name", "component")
+                for key in keys:
+                    expected = " ".join(record[key].split())
+                    self.assertEqual(text.count(expected), 16, key)
 
 
 class ReportTests(unittest.TestCase):

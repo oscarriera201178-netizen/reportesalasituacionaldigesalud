@@ -314,7 +314,7 @@ def generate_pdf(store, token, center_id=None, *, category=None, kind=None, vehi
         return doc.tobytes(garbage=4, deflate=True)
 
 
-def generate_military_pdf(records, component=None):
+def generate_military_pdf(records, component=None, *, health_registry=False):
     grouped = {name: [] for name in MILITARY_COMPONENTS}
     for record in records:
         grouped.setdefault(record["component"], []).append(record)
@@ -325,6 +325,10 @@ def generate_military_pdf(records, component=None):
         )
     )
     components = tuple(name for name in components if grouped.get(name))
+    if health_registry:
+        selected_records = [record for name in components for record in grouped[name]]
+        grouped = {"centros de salud": selected_records}
+        components = ("centros de salud",) if selected_records else ()
     if not components:
         raise InventoryError("No hay registros para generar el reporte con los filtros seleccionados.")
     headers = (
@@ -337,6 +341,11 @@ def generate_military_pdf(records, component=None):
     )
     minimum_widths = (32, 50, 100, 65, 68, 32, 82, 100, 75, 65, 100)
     maximum_widths = (40, 68, 200, 95, 80, 40, 115, 180, 130, 160, 200)
+    if health_registry:
+        headers += ("COMPONENTE", "CENTRO DE SALUD")
+        keys += ("component", "center_name")
+        minimum_widths = (26, 42, 85, 58, 60, 28, 65, 75, 62, 55, 75, 85, 88)
+        maximum_widths += (160, 200)
     left = 28
     with pymupdf.open() as doc:
         for name in components:
@@ -374,7 +383,8 @@ def generate_military_pdf(records, component=None):
                     )
                 _text(
                     page, pymupdf.Rect(28, 104, 932, 135),
-                    f"Registro de Militares Fallecidos en el Componente {name}",
+                    "Registros de Militares Fallecidos en Centros de Salud"
+                    if health_registry else f"Registro de Militares Fallecidos en el Componente {name}",
                     16, True,
                 )
                 x, y = left, 145

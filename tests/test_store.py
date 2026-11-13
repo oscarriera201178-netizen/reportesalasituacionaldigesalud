@@ -234,6 +234,37 @@ class StoreTests(unittest.TestCase):
             {row["N°"] for row in self.store.summary(self.admin)},
         )
 
+    def test_health_death_registry_enforces_scope_and_retains_center_and_component(self):
+        self.store.create_military_account(
+            self.admin, MILITARY_COMPONENTS[0], "guardia", TEMPORARY,
+        )
+        military = self.store.login("guardia", TEMPORARY)
+        values = (
+            "TTE", "PERSONA DE PRUEBA", "V-1", "1990-01-01",
+            "2026-10-15", "Muerte natural", "REDI Capital", "ZODI", "UNIDAD",
+        )
+        for component in (None, "", "Componente inexistente"):
+            with self.subTest(component=component), self.assertRaises(InventoryError):
+                self.store.add_military_record(self.center, *values, component=component)
+        self.store.add_military_record(
+            self.center, *values, component=MILITARY_COMPONENTS[2],
+        )
+        self.store.add_military_record(military, *values)
+        for token, account_type in (
+            (self.center, "military"), (military, "health"),
+        ):
+            with self.subTest(account_type=account_type), self.assertRaises(AccessError):
+                self.store.military_records(token, account_type=account_type)
+        south = self.store.login("sur", TEMPORARY)
+        self.assertEqual(self.store.military_records(south, account_type="health"), [])
+        restored = Store(self.store.path)
+        rows = restored.military_records(self.center, account_type="health")
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["center_name"], "Centro Norte")
+        self.assertEqual(rows[0]["component"], MILITARY_COMPONENTS[2])
+        self.assertEqual(len(restored.military_records(self.admin)), 1)
+        self.assertEqual(len(restored.military_records(self.admin, account_type="health")), 1)
+
     def test_inventory_creation_update_and_persistence(self):
         self.store.save_quantity(self.center, self.north, "Camas", "UCI", 10, 2)
         self.store.save_quantity(self.center, self.north, "Vehículos", "Ambulancia", 2, 1)

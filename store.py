@@ -718,21 +718,23 @@ class Store:
                 "JOIN centers c ON c.id=u.center_id ORDER BY c.id",
             )]
 
-    def military_records(self, token: str) -> list[dict]:
+    def military_records(self, token: str, *, account_type: str = "military") -> list[dict]:
+        if account_type not in ("military", "health"):
+            raise InventoryError("Tipo de registro no válido.")
         with self.transaction() as connection:
             user = self._actor(connection, token)
-            parameters = ()
-            where = ""
+            parameters = (account_type,)
+            where = " WHERE c.account_type=?"
             if user["role"] != "admin":
                 center = connection.execute(
                     "SELECT account_type FROM centers WHERE id=?", (user["center_id"],),
                 ).fetchone()
-                if user["role"] != "center" or not center or center["account_type"] != "military":
-                    raise AccessError("Este reporte solo está disponible para administración y cuentas militares.")
-                where = " WHERE r.center_id=?"
-                parameters = (user["center_id"],)
+                if user["role"] != "center" or not center or center["account_type"] != account_type:
+                    raise AccessError("No tienes permiso para consultar este registro.")
+                where += " AND r.center_id=?"
+                parameters += (user["center_id"],)
             records = [dict(row) for row in connection.execute(
-                "SELECT r.id,r.center_id,c.name AS component,r.full_name,r.grade,r.cedula,"
+                "SELECT r.id,r.center_id,c.name AS center_name,r.component,r.full_name,r.grade,r.cedula,"
                 "r.birth_date,r.unit,r.death_date,r.cause,r.redi,r.zodi,r.created_at "
                 "FROM military_records r JOIN centers c ON c.id=r.center_id"
                 f"{where} ORDER BY r.death_date DESC,r.id DESC",
@@ -753,7 +755,7 @@ class Store:
     def add_military_record(
         self, token: str, grade: str, full_name: str, cedula: str,
         birth_date: str, death_date: str, cause: str, redi: str,
-        zodi: str, unit: str,
+        zodi: str, unit: str, *, component: str | None = None,
     ) -> None:
         full_name = _text(full_name, "Nombre completo", 160).upper()
         grade = _text(grade, "Grado", 10)
@@ -775,12 +777,19 @@ class Store:
         with self.transaction() as connection:
             user = self._actor(connection, token)
             if user["role"] != "center":
-                raise AccessError("Solo una cuenta militar puede ingresar registros.")
+                raise AccessError("Solo una cuenta de institución puede ingresar registros.")
             center = connection.execute(
                 "SELECT name,account_type FROM centers WHERE id=?", (user["center_id"],),
             ).fetchone()
-            if not center or center["account_type"] != "military":
-                raise AccessError("Solo una cuenta militar puede ingresar registros.")
+            if not center:
+                raise AccessError("La cuenta no tiene una institución asignada.")
+            if center["account_type"] == "military":
+                component = center["name"]
+            elif center["account_type"] == "health":
+                if component not in MILITARY_COMPONENTS:
+                    raise InventoryError("Selecciona el componente del militar.")
+            else:
+                raise AccessError("No tienes permiso para ingresar registros.")
             connection.execute(
                 "INSERT INTO military_records("
                 "center_id,full_name,grade,cedula,birth_date,component,unit,death_date,"
@@ -788,7 +797,7 @@ class Store:
                 ") VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
                 (
                     user["center_id"], full_name, grade, cedula, birth_date,
-                    center["name"], unit, death_date, cause, redi, zodi, time.time(),
+                    component, unit, death_date, cause, redi, zodi, time.time(),
                 ),
             )
 

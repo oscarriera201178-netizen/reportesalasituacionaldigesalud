@@ -289,6 +289,17 @@ El año se selecciona de una lista con los años de los registros accesibles y e
 año actual. Todos los campos de ingreso son obligatorios; el servidor rechaza
 registros incompletos sin guardar datos parciales.
 
+Los usuarios de centros de salud disponen además del ítem **Registros de
+Militares fallecidos**, independiente del inventario y de su envío semanal.
+Usa los mismos datos, filtros y listas que el registro de componentes, pero el
+centro debe seleccionar el componente del militar. El centro de salud se
+asigna automáticamente desde la cuenta y no puede modificarse en el formulario.
+Cada centro solo ingresa y consulta sus registros, sin editarlos después de
+guardar. Administración consulta un consolidado exclusivo de centros, en un
+único cuadro con columnas de componente y centro de salud; continúa en otras
+páginas si es necesario, sin separar cuadros por institución. No se mezcla
+con el consolidado de las cuentas de componentes.
+
 Cada centro accede a su inventario con la clave asignada por el administrador;
 solo el administrador puede cambiarla desde **Cuentas de centros**.
 Las sesiones vencen tras 30 minutos sin actividad o un máximo de ocho horas.

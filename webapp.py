@@ -383,9 +383,9 @@ def create_app(store=None, *, secret_key=None):
             abort(400, "Acción no válida.")
         return redirect(url_for("accounts"))
 
-    def filtered_military_records(current_actor):
+    def filtered_military_records(current_actor, *, health_registry=False):
         selected_component = request.args.get("component") or None
-        if current_actor["role"] != "admin":
+        if current_actor["role"] != "admin" and not health_registry:
             selected_component = current_actor["center_name"]
         elif selected_component is not None and selected_component not in MILITARY_COMPONENTS:
             abort(400, "Componente militar no válido.")
@@ -407,7 +407,9 @@ def create_app(store=None, *, secret_key=None):
             abort(400, "Causa de fallecimiento no válida.")
         filters["redi"] = selected_redi
         filters["cause"] = selected_cause
-        available_records = get_store().military_records(token())
+        available_records = get_store().military_records(
+            token(), account_type="health" if health_registry else "military",
+        )
         years = {int(record["death_date"][:4]) for record in available_records}
         years.add(datetime.now(REPORT_TIMEZONE).year)
         if filters["year"] is not None:
@@ -423,13 +425,17 @@ def create_app(store=None, *, secret_key=None):
         return records, selected_component, filters, sorted(years, reverse=True)
 
     @app.get("/military")
-    def military_report():
+    @app.get("/health/military", defaults={"health_registry": True}, endpoint="health_military_report")
+    def military_report(health_registry=False):
         current_actor = require_role()
         if not isinstance(current_actor, dict):
             return current_actor or redirect(url_for("login"))
-        if current_actor["role"] != "admin" and current_actor["account_type"] != "military":
+        account_type = "health" if health_registry else "military"
+        if current_actor["role"] != "admin" and current_actor["account_type"] != account_type:
             abort(403)
-        records, selected_component, filters, years = filtered_military_records(current_actor)
+        records, selected_component, filters, years = filtered_military_records(
+            current_actor, health_registry=health_registry,
+        )
         return render_template(
             "military_records.html", records=records,
             military_grades=MILITARY_GRADES, military_causes=MILITARY_CAUSES,
@@ -437,6 +443,9 @@ def create_app(store=None, *, secret_key=None):
             selected_component=selected_component, month=filters["month"],
             year=filters["year"], selected_redi=filters["redi"],
             selected_cause=filters["cause"], years=years,
+            health_registry=health_registry,
+            report_endpoint="health_military_report" if health_registry else "military_report",
+            download_endpoint="download_health_military_report" if health_registry else "download_military_report",
             months=(
                 "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
                 "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
@@ -444,11 +453,12 @@ def create_app(store=None, *, secret_key=None):
         )
 
     @app.post("/military")
-    def add_military_record():
+    @app.post("/health/military", defaults={"health_registry": True}, endpoint="add_health_military_record")
+    def add_military_record(health_registry=False):
         current_actor = require_role("center")
         if not isinstance(current_actor, dict):
             return current_actor or redirect(url_for("login"))
-        if current_actor["account_type"] != "military":
+        if current_actor["account_type"] != ("health" if health_registry else "military"):
             abort(403)
         get_store().add_military_record(
             token(), request.form.get("grade", ""), request.form.get("full_name", ""),
@@ -456,20 +466,29 @@ def create_app(store=None, *, secret_key=None):
             request.form.get("death_date", ""), request.form.get("cause", ""),
             request.form.get("redi", ""), request.form.get("zodi", ""),
             request.form.get("unit", ""),
+            component=request.form.get("component") if health_registry else None,
         )
         flash("Registro ingresado.", "success")
-        return redirect(url_for("military_report"))
+        return redirect(url_for("health_military_report" if health_registry else "military_report"))
 
     @app.get("/military/report.pdf")
-    def download_military_report():
+    @app.get(
+        "/health/military/report.pdf", defaults={"health_registry": True},
+        endpoint="download_health_military_report",
+    )
+    def download_military_report(health_registry=False):
         current_actor = require_role()
         if not isinstance(current_actor, dict):
             return current_actor or redirect(url_for("login"))
-        if current_actor["role"] != "admin" and current_actor["account_type"] != "military":
+        if current_actor["role"] != "admin" and current_actor["account_type"] != (
+            "health" if health_registry else "military"
+        ):
             abort(403)
-        records, selected_component, _filters, _years = filtered_military_records(current_actor)
+        records, selected_component, _filters, _years = filtered_military_records(
+            current_actor, health_registry=health_registry,
+        )
         pdf = generate_military_pdf(
-            records, component=selected_component,
+            records, component=selected_component, health_registry=health_registry,
         )
         return send_file(
             io.BytesIO(pdf), as_attachment=True,
