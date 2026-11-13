@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from store import (
-    BED_TYPES, InventoryError, MILITARY_CAUSES, MILITARY_GRADES, MILITARY_REDI,
+    BED_TYPES, AccessError, InventoryError, MILITARY_CAUSES, MILITARY_GRADES, MILITARY_REDI,
     Store, load_center_catalog,
 )
 from webapp import create_app
@@ -241,6 +241,148 @@ class HtmlApplicationTests(unittest.TestCase):
         self.assertEqual(self.client.post(
             "/military/traffic", data={"csrf_token": csrf, **fields},
         ).status_code, 403)
+
+    def test_admin_edits_and_confirms_deletion_in_all_four_registries(self):
+        import pymupdf
+
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        north = self.store.login("norte", CENTER_PASSWORD)
+        guard = self.store.login("guardia", CENTER_PASSWORD)
+        base = {
+            "grade": "CAP", "full_name": "Paciente original", "cedula": "V-12345678",
+            "birth_date": "2000-10-16", "redi": "REDI Capital", "zodi": "ZODI PRUEBA",
+            "unit": "UNIDAD PRUEBA",
+        }
+        deaths = {**base, "death_date": "2026-10-15", "cause": "Muerte natural"}
+        traffic = {
+            **base, "attention_date": "2026-10-15", "accident_type": "Moto",
+            "patient_condition": "Heridas leves", "traffic_role": "Conductor",
+        }
+        for owner, component in ((guard, None), (north, "Armada Bolivariana")):
+            self.store.add_military_record(
+                owner, deaths["grade"], deaths["full_name"], deaths["cedula"],
+                deaths["birth_date"], deaths["death_date"], deaths["cause"],
+                deaths["redi"], deaths["zodi"], deaths["unit"], component=component,
+            )
+        self.store.add_traffic_record(north, **traffic, component="Armada Bolivariana")
+        self.store.add_traffic_record(
+            guard, **traffic, account_type="military", attention_center="Hospital público",
+        )
+        cases = (
+            ("component-deaths", "/military", "military", False, deaths),
+            ("health-deaths", "/health/military", "health", False, deaths),
+            ("health-traffic", "/health/traffic", "health", True, traffic),
+            ("component-traffic", "/military/traffic", "military", True, traffic),
+        )
+        self.login("admin", ADMIN_PASSWORD)
+        csrf = self.authenticated_csrf()
+        for registry, path, account_type, is_traffic, fields in cases:
+            with self.subTest(registry=registry):
+                read = self.store.traffic_records if is_traffic else self.store.military_records
+                original = read(self.admin_token, account_type=account_type)[0]
+                record_id = original["id"]
+                edit = f"/admin/registries/{registry}/{record_id}/edit"
+                delete = f"/admin/registries/{registry}/{record_id}/delete"
+                page = self.client.get(path)
+                self.assertIn(f'href="{edit}"'.encode(), page.data)
+                self.assertIn(f'href="{delete}"'.encode(), page.data)
+                page = self.client.get(edit)
+                self.assertEqual(page.status_code, 200)
+                self.assertIn(b'value="PACIENTE ORIGINAL"', page.data)
+                updated = {**fields, "full_name": "paciente corregido", "birth_date": "2001-10-16"}
+                if account_type == "health":
+                    updated["component"] = "Ejército Bolivariano"
+                elif is_traffic:
+                    updated["attention_center"] = "hospital nuevo"
+                    updated["component"] = "Armada Bolivariana"
+                invalid = {**updated, "birth_date": "2030-01-01", "csrf_token": csrf}
+                response = self.client.post(edit, data=invalid, headers={"Referer": "http://localhost" + edit})
+                self.assertEqual(response.status_code, 303)
+                self.assertEqual(read(self.admin_token, account_type=account_type)[0], original)
+                required = list(updated)
+                if account_type == "military" and is_traffic:
+                    required.remove("component")
+                for field in required:
+                    with self.subTest(registry=registry, missing=field):
+                        response = self.client.post(
+                            edit, data={**updated, field: "", "csrf_token": csrf},
+                            headers={"Referer": "http://localhost" + edit},
+                        )
+                        self.assertEqual(response.status_code, 303)
+                        self.assertEqual(read(self.admin_token, account_type=account_type)[0], original)
+                self.assertEqual(self.client.post(edit, data=updated).status_code, 400)
+                response = self.client.post(edit, data={**updated, "csrf_token": csrf})
+                self.assertEqual(response.status_code, 302)
+                row = read(self.admin_token, account_type=account_type)[0]
+                self.assertEqual(row["full_name"], "PACIENTE CORREGIDO")
+                self.assertEqual(row["age"], 24)
+                self.assertEqual(row["center_id"], original["center_id"])
+                self.assertEqual(row["created_at"], original["created_at"])
+                reopened = Store(Path(self.directory.name) / "inventory.sqlite3")
+                persisted_read = reopened.traffic_records if is_traffic else reopened.military_records
+                self.assertEqual(persisted_read(self.admin_token, account_type=account_type)[0], row)
+                self.assertEqual(row["component"], "Ejército Bolivariano" if account_type == "health"
+                                 else "Guardia Nacional Bolivariana")
+                if account_type == "military" and is_traffic:
+                    self.assertEqual(row["center_name"], "HOSPITAL NUEVO")
+                pdf = self.client.get(path + "/report.pdf")
+                with pymupdf.open(stream=pdf.data, filetype="pdf") as document:
+                    self.assertIn("PACIENTE CORREGIDO", " ".join(document[0].get_text().split()))
+                confirm = self.client.get(delete)
+                self.assertEqual(confirm.status_code, 200)
+                self.assertIn("no se puede deshacer".encode(), confirm.data)
+                self.assertEqual(self.client.post(delete, data={"csrf_token": csrf}).status_code, 400)
+                self.assertEqual(len(read(self.admin_token, account_type=account_type)), 1)
+                response = self.client.post(delete, data={"csrf_token": csrf, "confirm": "eliminar"})
+                self.assertEqual(response.status_code, 302)
+                self.assertEqual(read(self.admin_token, account_type=account_type), [])
+                self.assertEqual(persisted_read(self.admin_token, account_type=account_type), [])
+
+    def test_registry_management_is_admin_only_and_checks_registry_scope(self):
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia", CENTER_PASSWORD,
+        )
+        guard = self.store.login("guardia", CENTER_PASSWORD)
+        self.store.add_military_record(
+            guard, "TTE", "PACIENTE PRUEBA", "V-1", "2000-01-01",
+            "2026-01-01", "Muerte natural", "REDI Capital", "ZODI", "UNIDAD",
+        )
+        record_id = self.store.military_records(self.admin_token)[0]["id"]
+        self.login("norte", CENTER_PASSWORD)
+        csrf = self.authenticated_csrf()
+        for token in (self.store.login("norte", CENTER_PASSWORD), guard):
+            with self.client.session_transaction() as browser_session:
+                browser_session["token"] = token
+            for operation in ("edit", "delete"):
+                path = f"/admin/registries/component-deaths/{record_id}/{operation}"
+                self.assertEqual(self.client.get(path).status_code, 403)
+                self.assertEqual(self.client.post(
+                    path, data={"csrf_token": csrf, "confirm": "eliminar"},
+                ).status_code, 403)
+            self.assertNotIn(b">Editar</a>", self.client.get(
+                "/military" if token == guard else "/health/military",
+            ).data)
+            with self.assertRaises(AccessError):
+                self.store.manage_patient_record(
+                    token, record_id, account_type="military", traffic=False, action="delete",
+                )
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = self.admin_token
+        with self.assertRaises(InventoryError):
+            self.store.manage_patient_record(
+                self.admin_token, record_id, account_type="health", traffic=False, action="delete",
+            )
+        for registry in ("health-deaths", "component-traffic", "no-existe"):
+            self.assertEqual(self.client.get(
+                f"/admin/registries/{registry}/{record_id}/edit",
+            ).status_code, 404)
+            self.assertEqual(self.client.post(
+                f"/admin/registries/{registry}/{record_id}/delete",
+                data={"csrf_token": csrf, "confirm": "eliminar"},
+            ).status_code, 404)
+        self.assertEqual(len(self.store.military_records(self.admin_token)), 1)
 
     def test_inventory_requires_login_and_limits_center_access(self):
         response = self.client.get(f"/inventory/{self.center['id']}")

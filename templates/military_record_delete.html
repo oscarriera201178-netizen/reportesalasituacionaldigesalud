@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}Eliminar registro · DIGESALUD-MPPD{% endblock %}
+{% block content %}
+<section class="panel">
+  <h1>Confirmar eliminación</h1>
+  <p>Se eliminará definitivamente el registro de <strong>{{ record.full_name }}</strong> ({{ record.cedula }}). Esta acción no se puede deshacer.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="confirm" value="eliminar">
+    <button class="button button-primary" type="submit">Eliminar definitivamente</button>
+    <a class="button button-muted" href="{{ url_for(report_endpoint) }}">Cancelar</a>
+  </form>
+</section>
+{% endblock %}

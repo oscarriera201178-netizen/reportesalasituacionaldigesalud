@@ -452,6 +452,59 @@ def create_app(store=None, *, secret_key=None):
         ]
         return records, selected_component, filters, sorted(years, reverse=True)
 
+    registries = {
+        "component-deaths": ("military", False, "military_report"),
+        "health-deaths": ("health", False, "health_military_report"),
+        "health-traffic": ("health", True, "traffic_report"),
+        "component-traffic": ("military", True, "component_traffic_report"),
+    }
+
+    def selected_patient_record(registry, record_id):
+        if registry not in registries:
+            abort(404)
+        account_type, traffic, endpoint = registries[registry]
+        records = (
+            get_store().traffic_records(token(), account_type=account_type)
+            if traffic else get_store().military_records(token(), account_type=account_type)
+        )
+        record = next((row for row in records if row["id"] == record_id), None)
+        if record is None:
+            abort(404)
+        return account_type, traffic, endpoint, record
+
+    @app.route("/admin/registries/<registry>/<int:record_id>/edit", methods=("GET", "POST"))
+    @admin_required
+    def edit_patient_record(registry, record_id):
+        account_type, traffic, endpoint, record = selected_patient_record(registry, record_id)
+        if request.method == "POST":
+            get_store().manage_patient_record(
+                token(), record_id, account_type=account_type, traffic=traffic,
+                action="update", fields=request.form.to_dict(),
+            )
+            flash("Registro actualizado.", "success")
+            return redirect(url_for(endpoint))
+        return render_template(
+            "military_record_edit.html", editing_record=record, report_endpoint=endpoint,
+            health_registry=account_type == "health", traffic_registry=traffic,
+            military_grades=MILITARY_GRADES, military_causes=TRAFFIC_TYPES if traffic else MILITARY_CAUSES,
+            military_redi=MILITARY_REDI, military_components=MILITARY_COMPONENTS,
+            traffic_conditions=TRAFFIC_CONDITIONS, traffic_roles=TRAFFIC_ROLES,
+        )
+
+    @app.route("/admin/registries/<registry>/<int:record_id>/delete", methods=("GET", "POST"))
+    @admin_required
+    def delete_patient_record(registry, record_id):
+        account_type, traffic, endpoint, record = selected_patient_record(registry, record_id)
+        if request.method == "POST":
+            if request.form.get("confirm") != "eliminar":
+                abort(400, "Confirma la eliminación definitiva.")
+            get_store().manage_patient_record(
+                token(), record_id, account_type=account_type, traffic=traffic, action="delete",
+            )
+            flash("Registro eliminado definitivamente.", "success")
+            return redirect(url_for(endpoint))
+        return render_template("military_record_delete.html", record=record, report_endpoint=endpoint)
+
     @app.get("/military")
     @app.get(
         "/military/traffic", defaults={"traffic_registry": True},
@@ -481,6 +534,7 @@ def create_app(store=None, *, secret_key=None):
             year=filters["year"], selected_redi=filters["redi"],
             selected_cause=filters["cause"], years=years,
             health_registry=health_registry,
+            registry=("health-" if health_registry else "component-") + ("traffic" if traffic_registry else "deaths"),
             traffic_registry=traffic_registry, traffic_conditions=TRAFFIC_CONDITIONS,
             traffic_roles=TRAFFIC_ROLES,
             report_endpoint=("traffic_report" if health_registry else "component_traffic_report") if traffic_registry else (

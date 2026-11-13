@@ -159,6 +159,30 @@ def _military_patient_fields(grade, full_name, cedula, birth_date, redi, zodi, u
     }
 
 
+def _death_fields(birth_date, death_date, cause):
+    death_date = _iso_date(death_date, "Fecha de fallecimiento")
+    if death_date < birth_date:
+        raise InventoryError("La fecha de fallecimiento no puede ser anterior a la fecha de nacimiento.")
+    cause = _text(cause, "Causa de la muerte", 80)
+    if cause not in MILITARY_CAUSES:
+        raise InventoryError("Selecciona una causa de muerte válida.")
+    return death_date, cause
+
+
+def _traffic_fields(birth_date, attention_date, accident_type, patient_condition, traffic_role):
+    attention_date = _iso_date(attention_date, "Fecha de atención")
+    if attention_date < birth_date:
+        raise InventoryError("La fecha de atención no puede ser anterior a la fecha de nacimiento.")
+    for value, options, label in (
+        (accident_type, TRAFFIC_TYPES, "tipo de accidente"),
+        (patient_condition, TRAFFIC_CONDITIONS, "condición"),
+        (traffic_role, TRAFFIC_ROLES, "participación"),
+    ):
+        if value not in options:
+            raise InventoryError(f"Selecciona una opción válida de {label}.")
+    return attention_date
+
+
 def _username(username: str) -> str:
     username = username.strip().lower()
     if not re.fullmatch(r"[a-z0-9_.-]{3,40}", username):
@@ -805,12 +829,7 @@ class Store:
     ) -> None:
         patient = _military_patient_fields(grade, full_name, cedula, birth_date, redi, zodi, unit)
         birth_date = patient["birth_date"]
-        death_date = _iso_date(death_date, "Fecha de fallecimiento")
-        if death_date < birth_date:
-            raise InventoryError("La fecha de fallecimiento no puede ser anterior a la fecha de nacimiento.")
-        cause = _text(cause, "Causa de la muerte", 80)
-        if cause not in MILITARY_CAUSES:
-            raise InventoryError("Selecciona una causa de muerte válida.")
+        death_date, cause = _death_fields(birth_date, death_date, cause)
         with self.transaction() as connection:
             user = self._actor(connection, token)
             if user["role"] != "center":
@@ -878,16 +897,9 @@ class Store:
         if account_type not in ("health", "military"):
             raise InventoryError("Tipo de institución no válido.")
         patient = _military_patient_fields(grade, full_name, cedula, birth_date, redi, zodi, unit)
-        attention_date = _iso_date(attention_date, "Fecha de atención")
-        if attention_date < patient["birth_date"]:
-            raise InventoryError("La fecha de atención no puede ser anterior a la fecha de nacimiento.")
-        for value, options, label in (
-            (accident_type, TRAFFIC_TYPES, "tipo de accidente"),
-            (patient_condition, TRAFFIC_CONDITIONS, "condición"),
-            (traffic_role, TRAFFIC_ROLES, "participación"),
-        ):
-            if value not in options:
-                raise InventoryError(f"Selecciona una opción válida de {label}.")
+        attention_date = _traffic_fields(
+            patient["birth_date"], attention_date, accident_type, patient_condition, traffic_role,
+        )
         with self.transaction() as connection:
             user = self._actor(connection, token)
             if user["role"] != "center":
@@ -915,6 +927,63 @@ class Store:
                     patient["zodi"], time.time(), attention_center,
                 ),
             )
+
+    def manage_patient_record(self, token: str, record_id: int, *, account_type: str,
+                              traffic: bool, action: str, fields: dict | None = None) -> None:
+        if account_type not in ("health", "military") or action not in ("update", "delete"):
+            raise InventoryError("Tipo de registro o acción no válida.")
+        table = "traffic_records" if traffic else "military_records"
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            existing = connection.execute(
+                f"SELECT r.*,c.account_type FROM {table} r JOIN centers c ON c.id=r.center_id "
+                "WHERE r.id=? AND c.account_type=?", (record_id, account_type),
+            ).fetchone()
+            if not existing:
+                raise InventoryError("El registro seleccionado no existe en este reporte.")
+            if action == "delete":
+                connection.execute(f"DELETE FROM {table} WHERE id=?", (record_id,))
+                return
+            if fields is None:
+                raise InventoryError("Faltan los datos del registro.")
+            patient = _military_patient_fields(
+                fields.get("grade", ""), fields.get("full_name", ""), fields.get("cedula", ""),
+                fields.get("birth_date", ""), fields.get("redi", ""), fields.get("zodi", ""),
+                fields.get("unit", ""),
+            )
+            component = fields.get("component", "") if account_type == "health" else existing["component"]
+            if component not in MILITARY_COMPONENTS:
+                raise InventoryError("Selecciona el componente del militar.")
+            if traffic:
+                attention_date = _traffic_fields(
+                    patient["birth_date"], fields.get("attention_date", ""),
+                    fields.get("accident_type", ""), fields.get("patient_condition", ""),
+                    fields.get("traffic_role", ""),
+                )
+                attention_center = (
+                    _text(fields.get("attention_center", ""), "Centro de salud de atención", 160).upper()
+                    if account_type == "military" else existing["attention_center"]
+                )
+                connection.execute(
+                    "UPDATE traffic_records SET grade=?,full_name=?,cedula=?,birth_date=?,"
+                    "redi=?,zodi=?,unit=?,component=?,attention_date=?,accident_type=?,"
+                    "patient_condition=?,traffic_role=?,attention_center=? WHERE id=?",
+                    (patient["grade"], patient["full_name"], patient["cedula"], patient["birth_date"],
+                     patient["redi"], patient["zodi"], patient["unit"], component, attention_date,
+                     fields.get("accident_type", ""), fields.get("patient_condition", ""),
+                     fields.get("traffic_role", ""), attention_center, record_id),
+                )
+            else:
+                death_date, cause = _death_fields(
+                    patient["birth_date"], fields.get("death_date", ""), fields.get("cause", ""),
+                )
+                connection.execute(
+                    "UPDATE military_records SET grade=?,full_name=?,cedula=?,birth_date=?,"
+                    "redi=?,zodi=?,unit=?,component=?,death_date=?,cause=? WHERE id=?",
+                    (patient["grade"], patient["full_name"], patient["cedula"], patient["birth_date"],
+                     patient["redi"], patient["zodi"], patient["unit"], component, death_date, cause,
+                     record_id),
+                )
 
     def summary(self, token: str) -> list[dict]:
         with self.transaction() as connection:

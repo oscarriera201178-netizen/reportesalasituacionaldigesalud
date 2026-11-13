@@ -329,6 +329,10 @@ Dentro de los reportes, el único acceso de navegación es **Regresar**; no se
 muestran accesos a cuentas, informes ni otros reportes. Los filtros y formularios
 propios de cada reporte se conservan. Las cuentas de componentes ingresan a un
 menú con sus dos registros y también regresan a ese menú desde cada reporte.
+Administración puede editar o eliminar registros en los cuatro reportes. La
+eliminación es definitiva y requiere confirmación. La institución que ingresó
+el registro se conserva al editar; las cuentas de centros y componentes siguen
+sin permisos para editar o eliminar.
 
 **Militares Involucrados en Accidentes de Tránsito** solo permite ingresar datos
 a cuentas de componentes. Conserva los campos y las listas del registro de

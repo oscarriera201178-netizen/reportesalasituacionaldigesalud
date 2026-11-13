@@ -1,0 +1,41 @@
+{% set record = editing_record|default({}) %}
+{% if health_registry %}
+  <label>Componente<select name="component" required>
+    <option value="">Selecciona el componente</option>
+    {% for component in military_components %}<option value="{{ component }}" {% if record.component == component %}selected{% endif %}>{{ component }}</option>{% endfor %}
+  </select></label>
+{% endif %}
+{% if traffic_registry and not health_registry %}
+  <label>CENTRO DE SALUD DE ATENCIÓN<input class="uppercase-field" name="attention_center" maxlength="160" required value="{{ record.attention_center|default('') }}"></label>
+{% endif %}
+<label>GDO/JQUIA<select name="grade" required>
+  <option value="">Selecciona un grado o jerarquía</option>
+  {% for grade in military_grades %}<option value="{{ grade }}" {% if record.grade == grade %}selected{% endif %}>{{ grade }}</option>{% endfor %}
+</select></label>
+<label>NOMBRE Y APELLIDOS<input class="uppercase-field" name="full_name" maxlength="160" value="{{ record.full_name|default('') }}" required></label>
+<label>CÉDULA<input name="cedula" maxlength="32" value="{{ record.cedula|default('') }}" required></label>
+<label>FECHA NACIMIENTO<input name="birth_date" type="date" value="{{ record.birth_date|default('') }}" required></label>
+{% set date_field = 'attention_date' if traffic_registry else 'death_date' %}
+<label>{{ "FECHA DE ATENCIÓN" if traffic_registry else "FECHA DE LA MUERTE" }}<input name="{{ date_field }}" type="date" value="{{ record.get(date_field, '') }}" required></label>
+{% set cause_field = 'accident_type' if traffic_registry else 'cause' %}
+<label>{{ "TIPO DE ACCIDENTE" if traffic_registry else "CAUSAS DE LA MUERTE" }}<select name="{{ cause_field }}" required>
+  <option value="">{{ "Selecciona un tipo" if traffic_registry else "Selecciona una causa" }}</option>
+  {% for cause in military_causes %}<option value="{{ cause }}" {% if record.get(cause_field) == cause %}selected{% endif %}>{{ cause }}</option>{% endfor %}
+</select></label>
+{% if traffic_registry %}
+  <label>CONDICIÓN<select name="patient_condition" required>
+    <option value="">Selecciona la condición</option>
+    {% for condition in traffic_conditions %}<option value="{{ condition }}" {% if record.patient_condition == condition %}selected{% endif %}>{{ condition }}</option>{% endfor %}
+  </select></label>
+  <label>PARTICIPACIÓN<select name="traffic_role" required>
+    <option value="">Selecciona la participación</option>
+    {% for role in traffic_roles %}<option value="{{ role }}" {% if record.traffic_role == role %}selected{% endif %}>{{ role }}</option>{% endfor %}
+  </select></label>
+{% endif %}
+<label>REDI<select name="redi" required>
+  <option value="">Selecciona una REDI</option>
+  {% for redi in military_redi %}<option value="{{ redi }}" {% if record.redi == redi %}selected{% endif %}>{{ redi }}</option>{% endfor %}
+</select></label>
+<label>ZODI<input class="uppercase-field" name="zodi" maxlength="120" value="{{ record.zodi|default('') }}" required></label>
+<label>UNIDAD<input class="uppercase-field" name="unit" maxlength="160" value="{{ record.unit|default('') }}" required></label>
+<p>La edad se calcula automáticamente según las fechas de nacimiento y {{ "atención" if traffic_registry else "fallecimiento" }}.</p>

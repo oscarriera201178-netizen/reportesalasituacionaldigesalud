@@ -74,44 +74,7 @@
   <p>Todos los campos son obligatorios. El registro no se guardará si falta algún dato.</p>
   <form method="post" action="{{ url_for(report_endpoint) }}" class="form-grid">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-    {% if health_registry %}
-      <label>Componente<select name="component" required>
-        <option value="">Selecciona el componente</option>
-        {% for component in military_components %}<option value="{{ component }}">{{ component }}</option>{% endfor %}
-      </select></label>
-    {% endif %}
-    {% if traffic_registry and not health_registry %}
-      <label>CENTRO DE SALUD DE ATENCIÓN<input class="uppercase-field" name="attention_center" maxlength="160" required></label>
-    {% endif %}
-    <label>GDO/JQUIA<select name="grade" required>
-      <option value="">Selecciona un grado o jerarquía</option>
-      {% for grade in military_grades %}<option value="{{ grade }}">{{ grade }}</option>{% endfor %}
-    </select></label>
-    <label>NOMBRE Y APELLIDOS<input class="uppercase-field" name="full_name" maxlength="160" required></label>
-    <label>CÉDULA<input name="cedula" maxlength="32" required></label>
-    <label>FECHA NACIMIENTO<input name="birth_date" type="date" required></label>
-    <label>{{ "FECHA DE ATENCIÓN" if traffic_registry else "FECHA DE LA MUERTE" }}<input name="{{ 'attention_date' if traffic_registry else 'death_date' }}" type="date" required></label>
-    <label>{{ "TIPO DE ACCIDENTE" if traffic_registry else "CAUSAS DE LA MUERTE" }}<select name="{{ 'accident_type' if traffic_registry else 'cause' }}" required>
-      <option value="">{{ "Selecciona un tipo" if traffic_registry else "Selecciona una causa" }}</option>
-      {% for cause in military_causes %}<option value="{{ cause }}">{{ cause }}</option>{% endfor %}
-    </select></label>
-    {% if traffic_registry %}
-      <label>CONDICIÓN<select name="patient_condition" required>
-        <option value="">Selecciona la condición</option>
-        {% for condition in traffic_conditions %}<option value="{{ condition }}">{{ condition }}</option>{% endfor %}
-      </select></label>
-      <label>PARTICIPACIÓN<select name="traffic_role" required>
-        <option value="">Selecciona la participación</option>
-        {% for role in traffic_roles %}<option value="{{ role }}">{{ role }}</option>{% endfor %}
-      </select></label>
-    {% endif %}
-    <label>REDI<select name="redi" required>
-      <option value="">Selecciona una REDI</option>
-      {% for redi in military_redi %}<option value="{{ redi }}">{{ redi }}</option>{% endfor %}
-    </select></label>
-    <label>ZODI<input class="uppercase-field" name="zodi" maxlength="120" required></label>
-    <label>UNIDAD<input class="uppercase-field" name="unit" maxlength="160" required></label>
-    <p>La edad se calcula automáticamente según las fechas de nacimiento y {{ "atención" if traffic_registry else "fallecimiento" }}.</p>
+    {% include "military_record_fields.html" %}
     <button class="button button-primary" type="submit">Ingresar registro</button>
   </form>
 </section>
@@ -130,6 +93,7 @@
           {% if traffic_registry %}<th>CONDICIÓN</th><th>PARTICIPACIÓN</th>{% endif %}
           <th>REDI</th><th>ZODI</th><th>UNIDAD</th>
           {% if health_registry or traffic_registry %}<th>COMPONENTE</th><th>CENTRO DE SALUD</th>{% endif %}
+          {% if current_actor.role == "admin" %}<th>ACCIONES</th>{% endif %}
         </tr></thead>
         <tbody>{% for record in component_records %}<tr>
           <td>{{ loop.index }}</td><td>{{ record.grade }}</td><td>{{ record.full_name }}</td>
@@ -138,6 +102,12 @@
           {% if traffic_registry %}<td>{{ record.patient_condition }}</td><td>{{ record.traffic_role }}</td>{% endif %}
           <td>{{ record.redi }}</td><td>{{ record.zodi }}</td><td>{{ record.unit }}</td>
           {% if health_registry or traffic_registry %}<td>{{ record.component }}</td><td>{{ record.center_name }}</td>{% endif %}
+          {% if current_actor.role == "admin" %}
+            <td>
+              <a class="button button-muted" href="{{ url_for('edit_patient_record', registry=registry, record_id=record.id) }}">Editar</a>
+              <a class="button button-muted" href="{{ url_for('delete_patient_record', registry=registry, record_id=record.id) }}">Eliminar</a>
+            </td>
+          {% endif %}
         </tr>{% endfor %}</tbody>
       </table></div>
     {% endfor %}
