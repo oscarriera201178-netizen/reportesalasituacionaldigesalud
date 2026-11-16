@@ -61,8 +61,11 @@
   <h2>Estado semanal</h2>
   {% if summary %}
     <div class="table-wrap"><table>
-      <thead><tr><th>N.º</th><th>Centro</th><th>Estado</th><th>Camas</th><th>Vehículos</th><th>Bancos</th><th>Laboratorios</th><th>Quirófanos</th><th>Equipos</th><th>Plantas eléctricas</th></tr></thead>
-      <tbody>{% for row in summary %}<tr><td>{{ row["N°"] }}</td><td>{{ row.Centro }}</td><td>{{ row.Estado }}</td><td>{{ row.Camas }}</td><td>{{ row.Vehículos }}</td><td>{{ row["Bancos de sangre"] }}</td><td>{{ row.Laboratorios }}</td><td>{{ row.Quirófanos }}</td><td>{{ row.Equipos }}</td><td>{{ row["Plantas eléctricas"] }}</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>N.º</th><th>Centro</th><th>Estado</th><th>Camas</th><th>Vehículos</th><th>Bancos</th><th>Laboratorios</th><th>Quirófanos</th><th>Equipos</th><th>Plantas eléctricas</th><th>Acciones</th></tr></thead>
+      <tbody>{% for row in summary %}<tr><td>{{ row["N°"] }}</td><td>{{ row.Centro }}</td><td>{{ row.Estado }}</td><td>{{ row.Camas }}</td><td>{{ row.Vehículos }}</td><td>{{ row["Bancos de sangre"] }}</td><td>{{ row.Laboratorios }}</td><td>{{ row.Quirófanos }}</td><td>{{ row.Equipos }}</td><td>{{ row["Plantas eléctricas"] }}</td><td>
+        {% if row.Estado == report_loaded %}<a class="button button-muted" href="{{ url_for('return_inventory', center_id=row['N°']) }}">Devolver carga</a>{% endif %}
+        <a class="button button-danger" href="{{ url_for('delete_inventory', center_id=row['N°']) }}">Eliminar inventario</a>
+      </td></tr>{% endfor %}</tbody>
     </table></div>
   {% else %}<p>No hay centros registrados.</p>{% endif %}
 </section>
@@ -83,6 +86,11 @@
     </table></div>
   {% else %}<p>No hay centros registrados.</p>{% endif %}
 </section>
+<details class="panel">
+  <summary>Limpieza de inventarios de prueba</summary>
+  <p>Elimina los inventarios y las cargas semanales de todos los centros, incluidos sus historiales de inventario. Conserva los centros, las cuentas y los registros de pacientes y militares. Esta acción requiere confirmación y no se puede deshacer.</p>
+  <a class="button button-danger" href="{{ url_for('delete_inventory') }}">Eliminar inventarios de todos los centros</a>
+</details>
 <details class="panel">
   <summary>Respaldo privado de datos</summary>
   <p>Incluye cuentas e inventarios. Guarda la copia en un lugar privado; no la compartas ni la subas al repositorio.</p>

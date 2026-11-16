@@ -36,7 +36,8 @@ mostrar el texto completo.
 - Inventario privado: ninguna cantidad ni centro se muestra sin iniciar sesión.
 - Una cuenta administradora y una cuenta por centro, sin límite fijo de centros.
   Cada centro tiene un número permanente, visible en los listados y selectores.
-- La administración (DIGESALUD-MPPD) solo consulta y descarga PDF; no realiza
+- La administración (DIGESALUD-MPPD) consulta, descarga PDF y gestiona devoluciones
+  y eliminaciones; no realiza
   cargas de inventario. En **Informes**, cada ítem permite elegir un centro o
   todos y un tipo o todos los tipos.
   Los estados semanales de los centros permanecen visibles y no cambian al
@@ -49,6 +50,20 @@ mostrar el texto completo.
   anteriores de esa sección, sin sumarlos; los centros sin nueva carga conservan
   sus últimos datos disponibles en los reportes. El estado semanal y el contador
   de envíos no excluyen esos datos.
+  En **Estado semanal**, administración puede **Devolver carga** de la semana
+  actual indicando un motivo. Se cancela el envío, se conserva el inventario
+  para los reportes y se desbloquean las siete secciones. El centro ve el motivo,
+  corrige, carga todas las secciones y vuelve a enviar; el nuevo envío retira el
+  aviso de devolución. Un formulario de devolución anterior no puede cancelar
+  un envío más reciente.
+  **Eliminar inventario** requiere escribir el nombre exacto del centro y borra
+  su inventario actual, historiales y cargas semanales, sin borrar el centro,
+  la cuenta ni los registros de pacientes o militares. En **Limpieza de
+  inventarios de prueba**, la opción para todos los centros requiere escribir
+  **ELIMINAR INVENTARIOS DE TODOS LOS CENTROS** y aplica el mismo alcance.
+  La eliminación es definitiva: guarda un respaldo privado antes de confirmar.
+  Estas acciones solo están disponibles para administración, se validan también
+  en almacenamiento y no se ejecutan al abrir una página ni al desplegar.
   La sección separada **Cuentas de centros** permite crear y gestionar accesos.
   Los centros, usuarios, inventarios y reportes existentes se conservan.
 - Administración también puede crear cuentas para las cinco instituciones

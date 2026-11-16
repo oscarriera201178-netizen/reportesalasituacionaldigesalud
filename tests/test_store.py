@@ -10,7 +10,7 @@ from database import SQLiteConnection
 from store import (
     AMBULANCE_TYPES, BED_TYPES, AccessError, IDLE_SECONDS, InventoryError, REPORT_LOADED, REPORT_PENDING,
     MILITARY_COMPONENTS, REPORT_TIMEZONE, SESSION_SECONDS, Store, load_center_catalog,
-    weekly_status,
+    DELETE_ALL_INVENTORY_CONFIRMATION, REPORT_SECTIONS, weekly_status,
 )
 
 
@@ -1057,6 +1057,150 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(restored.centers(token)[0], center)
         self.store.update_center(self.admin, self.north, "Otro nombre", "", "nuevo.usuario")
         self.assertEqual(self.store.identity(token)["center_id"], self.north)
+
+    def test_inventory_return_preserves_data_and_allows_correction_and_resubmission(self):
+        for attempt in range(2):
+            for section in REPORT_SECTIONS:
+                _, kinds = self.store._section_quantity_types(section)
+                values = {kind: (attempt + 1, 0) for kind in kinds}
+                if section == "Laboratorio":
+                    self.store.load_laboratories(self.center, self.north, values, False, [])
+                else:
+                    self.store.load_section(self.center, self.north, section, values)
+            self.store.submit(
+                self.center, self.north, require_all_categories=True, require_loaded_sections=True,
+            )
+            if attempt == 0:
+                inventory = self.store.inventory(self.center, self.north)
+                submitted_at = self.store.submission(self.center, self.north)["submitted_at"]
+                self.store.return_inventory(
+                    self.admin, self.north, submitted_at=submitted_at, reason="Corregir cantidades.",
+                )
+                restored = Store(self.store.path)
+                status = restored.submission(self.center, self.north)
+                self.assertTrue(status["editable"])
+                self.assertEqual(status["status"], REPORT_PENDING)
+                self.assertEqual(status["return_reason"], "Corregir cantidades.")
+                self.assertEqual(restored.inventory(self.center, self.north), inventory)
+                self.assertFalse(any(restored.section_loads(self.center, self.north).values()))
+                self.assertEqual(restored.summary(self.admin)[0]["Estado"], REPORT_PENDING)
+                self.assertEqual(restored.summary(self.admin)[0]["Camas"], len(BED_TYPES))
+                with self.assertRaises(InventoryError):
+                    restored.submit(self.center, self.north, require_loaded_sections=True)
+                self.clock.return_value += 1
+        self.assertTrue(self.store.submission(self.center, self.north)["loaded"])
+        self.assertEqual(self.store.submission(self.center, self.north)["return_reason"], "")
+        self.assertEqual(self.store.summary(self.admin)[0]["Camas"], len(BED_TYPES) * 2)
+        with self.assertRaisesRegex(InventoryError, "cambió"):
+            self.store.return_inventory(
+                self.admin, self.north, submitted_at=submitted_at, reason="Formulario anterior.",
+            )
+
+    def test_inventory_return_requires_admin_current_submission_and_reason(self):
+        for token in (self.center, "invalid"):
+            with self.subTest(token=token), self.assertRaises(AccessError):
+                self.store.return_inventory(
+                    token, self.north, submitted_at=0, reason="Error.",
+                )
+        with self.assertRaisesRegex(InventoryError, "semana actual"):
+            self.store.return_inventory(self.admin, self.north, submitted_at=0, reason="Error.")
+        self.store.save_quantity(self.center, self.north, "Camas", "UCI", 3, 1)
+        self.store.submit(self.center, self.north)
+        submitted_at = self.store.submission(self.center, self.north)["submitted_at"]
+        for reason in ("", " " * 3, "x" * 501):
+            with self.subTest(reason=reason), self.assertRaises(InventoryError):
+                self.store.return_inventory(
+                    self.admin, self.north, submitted_at=submitted_at, reason=reason,
+                )
+        self.assertTrue(self.store.submission(self.center, self.north)["loaded"])
+        self.store.return_inventory(
+            self.admin, self.north, submitted_at=submitted_at, reason="Corregir carga anterior.",
+        )
+        with self.assertRaises(InventoryError):
+            self.store.submit(self.center, self.north)
+        self.clock.return_value = datetime(2026, 11, 5, 12, tzinfo=REPORT_TIMEZONE).timestamp()
+        admin = self.store.login("admin", PASSWORD)
+        with self.assertRaisesRegex(InventoryError, "semana actual"):
+            self.store.return_inventory(admin, self.north, submitted_at=submitted_at, reason="Error.")
+
+    def test_inventory_deletion_preserves_accounts_and_patient_records_and_scopes_centers(self):
+        south_token = self.store.login("sur", TEMPORARY)
+        self.store.create_military_account(self.admin, MILITARY_COMPONENTS[0], "guardia", TEMPORARY)
+        military_token = self.store.login("guardia", TEMPORARY)
+        patient = {
+            "grade": "CAP", "full_name": "Paciente prueba", "cedula": "V-12345678",
+            "birth_date": "2000-10-16", "component": MILITARY_COMPONENTS[0],
+            "unit": "unidad", "redi": "REDI Capital", "zodi": "zodi",
+        }
+        for token in (self.center, south_token, military_token):
+            self.store.add_military_record(
+                token, **patient, death_date="2026-10-16", cause="Muerte natural",
+            )
+        self.store.add_traffic_record(
+            self.center, **patient, attention_date="2026-10-16",
+            accident_type="Moto", patient_condition="Heridas leves", traffic_role="Conductor",
+        )
+        for token, center_id in ((self.center, self.north), (south_token, self.south)):
+            self.store.save_facility(token, center_id, "Banco de sangre", "Historial banco", "General", "Operativo")
+            self.store.save_equipment(token, center_id, "EQ-1", "Monitor", "Marca", "Modelo", "Serie", "Operativo")
+            self.store.initialize_empty_items(token, center_id)
+            self.store.load_laboratories(
+                token, center_id, {"Laboratorio": (1, 0), "Laboratorio de emergencia": (0, 0)},
+                True, [{"slot": 1, "name": "Especial", "state": "Operativo"}],
+            )
+            with self.store.transaction() as connection:
+                connection.execute(
+                    "INSERT INTO migrated_facilities(facility_id) SELECT id FROM facilities WHERE center_id=?",
+                    (center_id,),
+                )
+                connection.execute(
+                    "INSERT INTO vehicle_history(center_id,kind,operational,unavailable) VALUES(?, 'Anterior', 2, 1)",
+                    (center_id,),
+                )
+                connection.execute(
+                    "UPDATE centers SET submitted_at=?,changed_at=? WHERE id=?",
+                    (self.clock.return_value, self.clock.return_value, center_id),
+                )
+        users = self.store.users(self.admin)
+        military_records = self.store.military_records(self.admin)
+        health_records = self.store.military_records(self.admin, account_type="health")
+        traffic_records = self.store.traffic_records(self.admin)
+        south_inventory = self.store.inventory(south_token, self.south)
+        self.store.delete_inventory(self.admin, self.north, confirmation="Centro Norte")
+        self.assertTrue(all(not rows for rows in self.store.inventory(self.center, self.north).values()))
+        self.assertFalse(any(self.store.section_loads(self.center, self.north).values()))
+        self.assertEqual(self.store.inventory(south_token, self.south), south_inventory)
+        self.assertTrue(self.store.submission(south_token, self.south)["loaded"])
+        self.store.delete_inventory(self.admin, None, confirmation=DELETE_ALL_INVENTORY_CONFIRMATION)
+        restored = Store(self.store.path)
+        for token, center_id in ((self.center, self.north), (south_token, self.south)):
+            self.assertTrue(all(not rows for rows in restored.inventory(token, center_id).values()))
+            self.assertTrue(restored.submission(token, center_id)["editable"])
+            self.assertEqual(restored.centers(token)[0]["changed_at"], 0)
+            with self.assertRaises(InventoryError):
+                restored.submit(token, center_id)
+        with restored.connect() as connection:
+            self.assertIsNone(connection.execute("SELECT 1 FROM migrated_facilities").fetchone())
+        self.assertEqual(restored.users(self.admin), users)
+        self.assertEqual(restored.military_records(self.admin), military_records)
+        self.assertEqual(restored.military_records(self.admin, account_type="health"), health_records)
+        self.assertEqual(restored.traffic_records(self.admin), traffic_records)
+        self.assertEqual(restored.identity(military_token)["center_name"], MILITARY_COMPONENTS[0])
+
+    def test_inventory_deletion_rejects_unauthorized_or_unconfirmed_requests(self):
+        self.store.save_quantity(self.center, self.north, "Camas", "UCI", 3, 1)
+        original = self.store.inventory(self.center, self.north)
+        for center_id, confirmation in (
+            (self.north, "Centro Norte"), (None, DELETE_ALL_INVENTORY_CONFIRMATION),
+        ):
+            for token in (self.center, "invalid"):
+                with self.subTest(center=center_id, token=token), self.assertRaises(AccessError):
+                    self.store.delete_inventory(token, center_id, confirmation=confirmation)
+            with self.assertRaises(InventoryError):
+                self.store.delete_inventory(self.admin, center_id, confirmation="incorrecto")
+        self.assertEqual(self.store.inventory(self.center, self.north), original)
+        with self.assertRaises(InventoryError):
+            self.store.delete_inventory(self.admin, 9999, confirmation="Centro Norte")
 
     def test_center_edits_require_admin_and_rollback_on_conflicts(self):
         original = self.store.centers(self.admin)

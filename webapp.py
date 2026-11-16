@@ -21,6 +21,7 @@ from database import DATABASE_ERRORS
 from store import (
     AccessError, BED_TYPES, InventoryError, INVENTORY_QUANTITIES, MILITARY_CAUSES,
     MILITARY_COMPONENTS, MILITARY_GRADES, MILITARY_REDI,
+    DELETE_ALL_INVENTORY_CONFIRMATION,
     REPORT_LOADED, REPORT_SECTIONS, REPORT_TIMEZONE, load_center_catalog,
     SPECIAL_EQUIPMENT_TYPES, STATES, Store, VEHICLE_GROUPS,
     TRAFFIC_TYPES, TRAFFIC_CONDITIONS, TRAFFIC_ROLES, weekly_status,
@@ -269,9 +270,59 @@ def create_app(store=None, *, secret_key=None):
             report_category=report_category, center_id=selected_center,
             vehicle_group=vehicle_group, vehicle_groups=VEHICLE_GROUPS,
             options=options, kind=kind, reported=reported,
+            report_loaded=REPORT_LOADED,
             period_week=period.isocalendar().week,
             period_start=period.strftime("%d/%m/%Y"),
             period_end=(period + timedelta(days=4)).strftime("%d/%m/%Y"),
+        )
+
+    @app.route("/admin/inventory/<int:center_id>/return", methods=("GET", "POST"))
+    @admin_required
+    def return_inventory(center_id):
+        store_obj = get_store()
+        center = next(
+            (center for center in store_obj.centers(token()) if center["id"] == center_id),
+            None,
+        )
+        if center is None:
+            abort(404)
+        if request.method == "POST":
+            try:
+                submitted_at = float(request.form.get("submitted_at", ""))
+            except ValueError as error:
+                raise InventoryError("El envío seleccionado no es válido.") from error
+            store_obj.return_inventory(
+                token(), center_id, submitted_at=submitted_at,
+                reason=request.form.get("reason", ""),
+            )
+            flash("Carga devuelta. El centro puede corregir, cargar las secciones y enviar nuevamente.", "success")
+            return redirect(url_for("home"))
+        status = store_obj.submission(token(), center_id)
+        if not status["loaded"]:
+            raise InventoryError("El centro no tiene un envío en la semana actual para devolver.")
+        return render_template(
+            "inventory_admin_action.html", action="return", center=center, status=status,
+        )
+
+    @app.route("/admin/inventory/delete-all", defaults={"center_id": None}, methods=("GET", "POST"))
+    @app.route("/admin/inventory/<int:center_id>/delete", methods=("GET", "POST"))
+    @admin_required
+    def delete_inventory(center_id):
+        store_obj = get_store()
+        centers = store_obj.centers(token())
+        center = next((center for center in centers if center["id"] == center_id), None)
+        if center_id is not None and center is None:
+            abort(404)
+        if request.method == "POST":
+            store_obj.delete_inventory(
+                token(), center_id, confirmation=request.form.get("confirmation", ""),
+            )
+            flash("Inventarios y cargas semanales eliminados. Se conservaron centros, cuentas y registros de pacientes y militares.", "success")
+            return redirect(url_for("home"))
+        return render_template(
+            "inventory_admin_action.html", action="delete", center=center,
+            center_count=len(centers),
+            confirmation=center["name"] if center else DELETE_ALL_INVENTORY_CONFIRMATION,
         )
 
     def summary_rows(data, category, *, kind=None, vehicle_group=None):

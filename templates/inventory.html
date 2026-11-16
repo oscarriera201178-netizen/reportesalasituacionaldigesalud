@@ -2,6 +2,9 @@
 {% block title %}{{ center.name }} · DIGESALUD-MPPD{% endblock %}
 {% block content %}
 <section class="center-heading"><h1>{{ center.name|upper }}</h1></section>
+{% if status.return_reason %}
+  <div class="notice notice-info"><strong>Carga devuelta por DIGESALUD-MPPD:</strong> {{ status.return_reason }}<br>Corrige los datos, carga nuevamente las siete secciones y realiza el envío semanal.</div>
+{% endif %}
 <nav class="category-nav" aria-label="Categorías de inventario">
   {% for key, label in categories.items() %}
     <a class="button {% if category == key %}button-primary{% else %}button-muted{% endif %}" href="{{ url_for('inventory', center_id=center.id, section=key) }}">{{ label }}</a>

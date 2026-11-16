@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ "Devolver carga" if action == "return" else "Eliminar inventario" }} · DIGESALUD-MPPD{% endblock %}
+{% block content %}
+<section class="panel">
+  {% if action == "return" %}
+    <h1>Devolver carga de {{ center.name }}</h1>
+    <p>Se cancelará el envío de esta semana y se habilitarán las siete secciones para corregirlas y enviarlas nuevamente. Los datos guardados se conservan y siguen disponibles en los reportes.</p>
+    <form method="post" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="submitted_at" value="{{ status.submitted_at }}">
+      <label>Motivo de la devolución<textarea name="reason" maxlength="500" required></textarea></label>
+      <button class="button button-primary" type="submit">Confirmar devolución</button>
+      <a class="button button-muted" href="{{ url_for('home') }}">Cancelar</a>
+    </form>
+  {% else %}
+    <h1>Eliminar inventario{% if center %} de {{ center.name }}{% else %} de todos los centros{% endif %}</h1>
+    <p>Se eliminarán definitivamente {% if center %}el inventario y las cargas semanales de este centro{% else %}los inventarios y las cargas semanales de los {{ center_count }} centros de salud{% endif %}, incluidos los historiales de inventario. Esta acción no se puede deshacer. Guarda un respaldo privado antes de continuar.</p>
+    <p>Se conservan los centros, las cuentas y los registros de pacientes y militares. Los inventarios eliminados dejan de aparecer en los reportes; cada centro deberá cargar nuevamente sus siete secciones.</p>
+    <form method="post" class="form-stack">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <label>Escribe <strong>{{ confirmation }}</strong> para confirmar<input name="confirmation" required autocomplete="off"></label>
+      <button class="button button-danger" type="submit">Eliminar definitivamente</button>
+      <a class="button button-muted" href="{{ url_for('home') }}">Cancelar</a>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

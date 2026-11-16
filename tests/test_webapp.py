@@ -592,6 +592,77 @@ class HtmlApplicationTests(unittest.TestCase):
         self.assertEqual(pdf.mimetype, "application/pdf")
         self.assertEqual(self.client.get("/admin/accounts").status_code, 200)
 
+    def test_inventory_return_requires_admin_and_shows_reason_to_center(self):
+        center_token = self.store.login("norte", CENTER_PASSWORD)
+        self.store.save_quantity(center_token, self.center["id"], "Camas", "UCI", 3, 1)
+        self.store.submit(center_token, self.center["id"])
+        original = self.store.inventory(center_token, self.center["id"])
+        path = f'/admin/inventory/{self.center["id"]}/return'
+        self.login("admin", ADMIN_PASSWORD)
+        csrf = self.authenticated_csrf()
+        self.assertIn(f'href="{path}"'.encode(), self.client.get("/").data)
+        page = self.client.get(path)
+        self.assertEqual(page.status_code, 200)
+        submitted_at = re.search(rb'name="submitted_at" value="([^"]+)"', page.data).group(1).decode()
+        self.assertTrue(self.store.submission(center_token, self.center["id"])["loaded"])
+        payload = {"csrf_token": csrf, "submitted_at": submitted_at, "reason": "Corregir las camas."}
+        self.assertEqual(self.client.post(path, data={**payload, "reason": ""}).status_code, 303)
+        self.assertTrue(self.store.submission(center_token, self.center["id"])["loaded"])
+        self.assertEqual(self.client.post(path, data={"reason": "Error."}).status_code, 400)
+        self.assertEqual(self.client.post(path, data=payload).status_code, 302)
+        self.assertEqual(self.store.inventory(center_token, self.center["id"]), original)
+        self.assertNotIn(f'href="{path}"'.encode(), self.client.get("/").data)
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = center_token
+        page = self.client.get(f'/inventory/{self.center["id"]}')
+        self.assertIn(b"Corregir las camas.", page.data)
+        self.assertIn(b'Carga devuelta por DIGESALUD-MPPD', page.data)
+        self.assertIn(b'id="inventory-form"', page.data)
+        self.assertEqual(self.client.get(path).status_code, 403)
+        self.assertEqual(self.client.post(path, data=payload).status_code, 403)
+
+    def test_inventory_deletion_requires_confirmation_and_protects_all_routes(self):
+        from store import DELETE_ALL_INVENTORY_CONFIRMATION
+
+        center_token = self.store.login("norte", CENTER_PASSWORD)
+        self.store.save_quantity(center_token, self.center["id"], "Camas", "UCI", 3, 1)
+        self.store.create_center(self.admin_token, "Centro Sur", "Sur", "sur", CENTER_PASSWORD)
+        south_token = self.store.login("sur", CENTER_PASSWORD)
+        south_id = self.store.centers(south_token)[0]["id"]
+        self.store.save_quantity(south_token, south_id, "Camas", "UCI", 7, 2)
+        single_path = f'/admin/inventory/{self.center["id"]}/delete'
+        all_path = "/admin/inventory/delete-all"
+        self.login("admin", ADMIN_PASSWORD)
+        csrf = self.authenticated_csrf()
+        for path in (single_path, all_path):
+            page = self.client.get(path)
+            self.assertEqual(page.status_code, 200)
+            self.assertIn(b'name="confirmation"', page.data)
+            self.assertTrue(self.store.inventory(center_token, self.center["id"])["quantities"])
+            self.assertEqual(self.client.post(path, data={"confirmation": "incorrecto"}).status_code, 400)
+            self.assertEqual(self.client.post(
+                path, data={"csrf_token": csrf, "confirmation": "incorrecto"},
+            ).status_code, 303)
+        self.assertEqual(self.client.get("/admin/inventory/9999/delete").status_code, 404)
+        self.assertEqual(self.client.post(
+            single_path, data={"csrf_token": csrf, "confirmation": self.center["name"]},
+        ).status_code, 302)
+        self.assertFalse(self.store.inventory(center_token, self.center["id"])["quantities"])
+        self.assertTrue(self.store.inventory(south_token, south_id)["quantities"])
+        self.assertEqual(self.client.post(
+            all_path, data={"csrf_token": csrf, "confirmation": DELETE_ALL_INVENTORY_CONFIRMATION},
+        ).status_code, 302)
+        self.assertFalse(self.store.inventory(south_token, south_id)["quantities"])
+        self.assertEqual(len(self.store.centers(self.admin_token)), 2)
+        self.assertEqual(self.store.identity(center_token)["center_id"], self.center["id"])
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = center_token
+        for path in (single_path, all_path):
+            self.assertEqual(self.client.get(path).status_code, 403)
+            self.assertEqual(self.client.post(
+                path, data={"csrf_token": csrf, "confirmation": DELETE_ALL_INVENTORY_CONFIRMATION},
+            ).status_code, 403)
+
     def test_admin_edits_accounts_and_confirms_deletion_of_center40(self):
         self.store.create_center(self.admin_token, "Centro Cuarenta", "Prueba", "centro40", CENTER_PASSWORD)
         self.store.create_military_account(

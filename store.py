@@ -42,6 +42,11 @@ REPORT_SECTIONS = (
     "Camas", "Vehículos", "Banco de sangre", "Laboratorio", "Quirófano",
     "Equipos médicos especiales", "Plantas eléctricas",
 )
+INVENTORY_TABLES = (
+    "quantities", "facilities", "facility_counts", "section_loads",
+    "vehicle_history", "special_laboratories", "equipment_counts", "plant_counts", "equipment",
+)
+DELETE_ALL_INVENTORY_CONFIRMATION = "ELIMINAR INVENTARIOS DE TODOS LOS CENTROS"
 MILITARY_COMPONENTS = (
     "Guardia Nacional Bolivariana",
     "Ejército Bolivariano",
@@ -433,6 +438,10 @@ class Store:
                 if column not in columns:
                     kind = "DOUBLE PRECISION" if self.database_url else "REAL"
                     connection.execute(f"ALTER TABLE centers ADD COLUMN {column} {kind} NOT NULL DEFAULT 0")
+            if "return_reason" not in columns:
+                connection.execute(
+                    "ALTER TABLE centers ADD COLUMN return_reason TEXT NOT NULL DEFAULT ''",
+                )
             connection.execute(
                 "CREATE UNIQUE INDEX IF NOT EXISTS assigned_center_user "
                 "ON centers(assigned_username COLLATE NOCASE) WHERE assigned_username != ''",
@@ -771,11 +780,7 @@ class Store:
                 "DELETE FROM migrated_facilities WHERE facility_id IN "
                 "(SELECT id FROM facilities WHERE center_id=?)", (center_id,),
             )
-            for table in (
-                "quantities", "facilities", "facility_counts", "section_loads",
-                "vehicle_history", "special_laboratories", "equipment_counts",
-                "plant_counts", "equipment", "military_records", "traffic_records",
-            ):
+            for table in (*INVENTORY_TABLES, "military_records", "traffic_records"):
                 connection.execute(f"DELETE FROM {table} WHERE center_id=?", (center_id,))
             connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
             connection.execute("DELETE FROM users WHERE id=?", (user_id,))
@@ -1148,6 +1153,62 @@ class Store:
                 for center in centers
             ]
 
+    def return_inventory(
+        self, token: str, center_id: int, *, submitted_at: float, reason: str,
+    ) -> None:
+        reason = _text(reason, "Motivo de la devolución", 500)
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            self._authorize_center(connection, token, center_id)
+            now = time.time()
+            status = self._weekly_status(connection, center_id, now)
+            if not status["loaded"]:
+                raise InventoryError("El centro no tiene un envío en la semana actual para devolver.")
+            if status["submitted_at"] != submitted_at:
+                raise InventoryError("La carga cambió; revisa el envío antes de devolverlo.")
+            connection.execute(
+                "UPDATE centers SET submitted_at=0, return_reason=? WHERE id=?",
+                (reason, center_id),
+            )
+            connection.executemany(
+                "INSERT INTO section_loads(center_id, section, period_start, loaded) VALUES(?, ?, ?, 0) "
+                "ON CONFLICT(center_id, section, period_start) DO UPDATE SET loaded=0",
+                [(center_id, section, status["period_start"]) for section in REPORT_SECTIONS],
+            )
+
+    def delete_inventory(
+        self, token: str, center_id: int | None, *, confirmation: str,
+    ) -> None:
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            if center_id is None:
+                expected = DELETE_ALL_INVENTORY_CONFIRMATION
+                condition = "center_id IN (SELECT id FROM centers WHERE account_type='health')"
+                parameters = ()
+                center_condition = "account_type='health'"
+            else:
+                self._authorize_center(connection, token, center_id)
+                expected = connection.execute(
+                    "SELECT name FROM centers WHERE id=?", (center_id,),
+                ).fetchone()["name"]
+                condition = "center_id=?"
+                parameters = (center_id,)
+                center_condition = "id=?"
+            if confirmation.strip() != expected:
+                raise InventoryError("Escribe el texto exacto para confirmar la eliminación del inventario.")
+            connection.execute(
+                f"DELETE FROM migrated_facilities WHERE facility_id IN "
+                f"(SELECT id FROM facilities WHERE {condition})",
+                parameters,
+            )
+            for table in INVENTORY_TABLES:
+                connection.execute(f"DELETE FROM {table} WHERE {condition}", parameters)
+            connection.execute(
+                "UPDATE centers SET submitted_at=0, changed_at=0, return_reason='' "
+                f"WHERE {center_condition}",
+                parameters,
+            )
+
     def manage_user(self, token: str, user_id: int, active: bool, password: str = "") -> None:
         with self.transaction() as connection:
             self._actor(connection, token, admin=True)
@@ -1328,9 +1389,10 @@ class Store:
 
     def _weekly_status(self, connection, center_id, now):
         row = connection.execute(
-            "SELECT submitted_at FROM centers WHERE id=?", (center_id,),
+            "SELECT submitted_at, return_reason FROM centers WHERE id=?", (center_id,),
         ).fetchone()
         status = weekly_status(row["submitted_at"], now)
+        status["return_reason"] = row["return_reason"]
         if self.allow_out_of_schedule:
             status["open"] = True
             status["editable"] = not status["loaded"]
@@ -1434,7 +1496,7 @@ class Store:
             if missing:
                 raise InventoryError("Completa todos los datos antes de enviar.")
             connection.execute(
-                "UPDATE centers SET submitted_at=? WHERE id=?", (now, center_id),
+                "UPDATE centers SET submitted_at=?, return_reason='' WHERE id=?", (now, center_id),
             )
 
     def save_quantity(self, token, center_id, category, kind, operational, unavailable, record_id=None):
@@ -1564,7 +1626,7 @@ class Store:
                 )
             if not missing:
                 connection.execute(
-                    "UPDATE centers SET submitted_at=? WHERE id=?", (now, center_id),
+                    "UPDATE centers SET submitted_at=?, return_reason='' WHERE id=?", (now, center_id),
                 )
             return missing
 
