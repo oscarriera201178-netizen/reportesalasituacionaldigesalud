@@ -573,9 +573,20 @@ class HtmlApplicationTests(unittest.TestCase):
         self.assertTrue(self.store.submission(token, self.center["id"])["loaded"])
 
     def test_admin_can_view_report_accounts_and_download_pdf(self):
+        from store import BED_TYPES
+
+        center_token = self.store.login("norte", CENTER_PASSWORD)
+        self.store.load_section(
+            center_token, self.center["id"], "Camas",
+            {kind: (0, 0) for kind in BED_TYPES},
+        )
         self.login("admin", ADMIN_PASSWORD)
-        self.assertEqual(self.client.get("/").status_code, 200)
-        self.assertIn(b"Estado semanal", self.client.get("/").data)
+        page = self.client.get("/")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Estado semanal", page.data)
+        self.assertIn(b"Carga de datos por secci\xc3\xb3n esta semana", page.data)
+        self.assertIn(b"load-status-done", page.data)
+        self.assertIn(b"load-status-pending", page.data)
         pdf = self.client.get("/reports.pdf?category=Camas")
         self.assertEqual(pdf.status_code, 200)
         self.assertEqual(pdf.mimetype, "application/pdf")

@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pymupdf
 
 from report import SUMMARY_CATEGORIES, counts, generate_military_pdf, generate_pdf, report_data
-from store import AccessError, InventoryError, REPORT_TIMEZONE, SPECIAL_EQUIPMENT_TYPES, Store, load_center_catalog
+from store import AccessError, InventoryError, REPORT_PENDING, REPORT_TIMEZONE, SPECIAL_EQUIPMENT_TYPES, Store, load_center_catalog
 
 
 PASSWORD = "Test-report-password-123"
@@ -99,6 +99,76 @@ class ReportTests(unittest.TestCase):
         self.store.create_center(self.token, "Centro Norte", "Norte", "norte", PASSWORD)
         self.store.create_center(self.token, "Centro Sur", "Sur", "sur", PASSWORD)
         self.north, self.south = [center["id"] for center in self.store.centers(self.token)]
+
+    def test_reports_keep_previous_week_data_until_replaced_by_latest_load(self):
+        for username, center_id, values in (
+            ("norte", self.north, (11, 2)),
+            ("sur", self.south, (4, 1)),
+        ):
+            token = self.store.login(username, PASSWORD)
+            self.store.save_category_quantities(
+                token, center_id, "Plantas eléctricas", {"Plantas eléctricas": values},
+            )
+            self.store.submit(token, center_id)
+
+        next_week = datetime(2026, 11, 5, 12, tzinfo=REPORT_TIMEZONE).timestamp()
+        with patch("store.time.time", return_value=next_week):
+            self.token = self.store.login("admin", PASSWORD)
+            north_token = self.store.login("norte", PASSWORD)
+            self.assertTrue(all(
+                row["Estado"] == REPORT_PENDING for row in self.store.summary(self.token)
+            ))
+            for phase, north_values in (
+                ("previous_week", (11, 2)),
+                ("new_load", (7, 3)),
+                ("zero_load", (0, 0)),
+            ):
+                with self.subTest(phase=phase):
+                    if phase != "previous_week":
+                        if phase == "zero_load":
+                            self.store.edit_section(north_token, self.north, "Plantas eléctricas")
+                        self.store.load_section(
+                            north_token, self.north, "Plantas eléctricas",
+                            {"Plantas eléctricas": north_values},
+                        )
+                    reopened = Store(self.store.path)
+                    expected = {
+                        self.north: list(north_values),
+                        self.south: [4, 1],
+                    }
+                    self.assertEqual(
+                        {
+                            center["id"]: sections[6]["Plantas eléctricas"]
+                            for center, sections in report_data(reopened, self.token)
+                        },
+                        expected,
+                    )
+                    for center_id in (None, self.north, self.south):
+                        with self.subTest(center=center_id), pymupdf.open(
+                            stream=generate_pdf(
+                                reopened, self.token, center_id, category="Plantas eléctricas",
+                            ), filetype="pdf",
+                        ) as document:
+                            words = document[0].get_text("words")
+                            pairs = (
+                                {"Norte": expected[self.north], "Sur": expected[self.south],
+                                 "GENERAL": [north_values[0] + 4, north_values[1] + 1]}
+                                if center_id is None
+                                else {"Norte" if center_id == self.north else "Sur": expected[center_id]}
+                            )
+                            for label, pair in pairs.items():
+                                row = next(
+                                    word for word in words
+                                    if word[4] == label and word[0] < 331 and word[1] > 260
+                                )
+                                self.assertEqual(
+                                    [
+                                        int(word[4]) for word in words
+                                        if word[0] > 331 and abs(word[1] - row[1]) < 1
+                                        and word[4].isdigit()
+                                    ],
+                                    [*pair, sum(pair)],
+                                )
 
     def test_pdf_generation_time_uses_venezuela_timezone(self):
         from datetime import timezone

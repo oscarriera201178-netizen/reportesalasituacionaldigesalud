@@ -233,6 +233,7 @@ def create_app(store=None, *, secret_key=None):
     def render_admin(store_obj, auth_token):
         centers = store_obj.centers(auth_token)
         summary = store_obj.summary(auth_token)
+        section_load_summary = store_obj.section_load_summary(auth_token)
         period = datetime.fromtimestamp(
             weekly_status(0, datetime.now(REPORT_TIMEZONE).timestamp())["period_start"],
             REPORT_TIMEZONE,
@@ -261,7 +262,9 @@ def create_app(store=None, *, secret_key=None):
         rows = summary_rows(data, report_category, kind=kind, vehicle_group=vehicle_group)
         reported = sum(row["Estado"] == REPORT_LOADED for row in summary)
         return render_template(
-            "admin.html", centers=centers, summary=summary, rows=rows,
+            "admin.html", centers=centers, summary=summary,
+            section_load_summary=section_load_summary, report_sections=REPORT_SECTIONS,
+            rows=rows,
             categories=REPORT_CATEGORIES, category=category,
             report_category=report_category, center_id=selected_center,
             vehicle_group=vehicle_group, vehicle_groups=VEHICLE_GROUPS,

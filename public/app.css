@@ -51,6 +51,9 @@ th { background: #eaf1ef; }
 .notice-success { background: #e5f5ec; color: #145a37; }
 .notice-info { background: #e8f2f8; color: #1d4e66; }
 .notices:empty { display: none; }
+.load-status { display: inline-block; padding: .2rem .5rem; border-radius: 999px; font-size: .85rem; font-weight: 750; white-space: nowrap; }
+.load-status-done { background: #e5f5ec; color: #145a37; }
+.load-status-pending { background: #fff3dc; color: #76500b; }
 .quantity-row { display: grid; grid-template-columns: minmax(160px, 2fr) minmax(130px, 1fr) minmax(130px, 1fr) minmax(100px, .7fr); gap: .8rem; align-items: end; padding: .8rem 0; border-bottom: 1px solid var(--line); }
 .quantity-row label { font-size: .9rem; }
 .quantity-row input { width: 100%; }

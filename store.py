@@ -1122,6 +1122,32 @@ class Store:
                 row["Estado"] = status["status"]
             return rows
 
+    def section_load_summary(self, token: str) -> list[dict]:
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            period_start = weekly_status(0, time.time())["period_start"]
+            centers = connection.execute(
+                "SELECT id, name FROM centers WHERE account_type='health' ORDER BY id",
+            ).fetchall()
+            loaded_sections = {
+                (row["center_id"], row["section"]): bool(row["loaded"])
+                for row in connection.execute(
+                    "SELECT center_id, section, loaded FROM section_loads WHERE period_start=?",
+                    (period_start,),
+                )
+            }
+            return [
+                {
+                    "N°": center["id"],
+                    "Centro": center["name"],
+                    **{
+                        section: loaded_sections.get((center["id"], section), False)
+                        for section in REPORT_SECTIONS
+                    },
+                }
+                for center in centers
+            ]
+
     def manage_user(self, token: str, user_id: int, active: bool, password: str = "") -> None:
         with self.transaction() as connection:
             self._actor(connection, token, admin=True)

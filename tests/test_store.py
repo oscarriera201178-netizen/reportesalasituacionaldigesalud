@@ -590,13 +590,33 @@ class StoreTests(unittest.TestCase):
         restored.submit(self.center, self.north, require_all_categories=True, require_loaded_sections=True)
         with self.assertRaisesRegex(InventoryError, REPORT_LOADED):
             restored.edit_section(self.center, self.north, "Camas")
+        from store import REPORT_SECTIONS
+        current_week = next(
+            row for row in restored.section_load_summary(self.admin)
+            if row["N°"] == self.north
+        )
+        self.assertTrue(all(current_week[section] for section in REPORT_SECTIONS))
         self.clock.return_value = datetime(2026, 11, 5, 12, tzinfo=REPORT_TIMEZONE).timestamp()
         token = restored.login("norte", CHANGED)
+        admin = restored.login("admin", PASSWORD)
         self.assertFalse(any(restored.section_loads(token, self.north).values()))
+        next_week = next(
+            row for row in restored.section_load_summary(admin)
+            if row["N°"] == self.north
+        )
+        self.assertFalse(any(next_week[section] for section in REPORT_SECTIONS))
         with self.assertRaises(InventoryError):
             restored.submit(token, self.north, require_all_categories=True, require_loaded_sections=True)
         restored.load_section(token, self.north, "Camas", values)
         self.assertTrue(restored.section_loads(token, self.north)["Camas"])
+        next_week = next(
+            row for row in restored.section_load_summary(admin)
+            if row["N°"] == self.north
+        )
+        self.assertTrue(next_week["Camas"])
+        self.assertFalse(any(
+            next_week[section] for section in REPORT_SECTIONS if section != "Camas"
+        ))
 
     def test_equipment_counts_validate_all_types_and_preserve_history(self):
         from store import SPECIAL_EQUIPMENT_TYPES

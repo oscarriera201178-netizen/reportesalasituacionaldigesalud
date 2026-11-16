@@ -13,6 +13,7 @@
 </section>
 <section class="panel">
   <h2>Consultar inventario</h2>
+  <p>Los reportes utilizan la última carga guardada de cada centro. Una nueva carga sustituye la anterior; si el centro no ha cargado esta semana, se mantienen sus últimos datos disponibles.</p>
   <form method="get" class="filter-grid">
     <label>Ítem
       <select name="category" onchange="this.form.submit()">
@@ -62,6 +63,23 @@
     <div class="table-wrap"><table>
       <thead><tr><th>N.º</th><th>Centro</th><th>Estado</th><th>Camas</th><th>Vehículos</th><th>Bancos</th><th>Laboratorios</th><th>Quirófanos</th><th>Equipos</th><th>Plantas eléctricas</th></tr></thead>
       <tbody>{% for row in summary %}<tr><td>{{ row["N°"] }}</td><td>{{ row.Centro }}</td><td>{{ row.Estado }}</td><td>{{ row.Camas }}</td><td>{{ row.Vehículos }}</td><td>{{ row["Bancos de sangre"] }}</td><td>{{ row.Laboratorios }}</td><td>{{ row.Quirófanos }}</td><td>{{ row.Equipos }}</td><td>{{ row["Plantas eléctricas"] }}</td></tr>{% endfor %}</tbody>
+    </table></div>
+  {% else %}<p>No hay centros registrados.</p>{% endif %}
+</section>
+<section class="panel">
+  <h2>Carga de datos por sección esta semana</h2>
+  <p>El estado corresponde a la semana indicada arriba. Pendiente no significa que se eliminen los datos anteriores: estos siguen disponibles en los reportes hasta una nueva carga.</p>
+  {% if section_load_summary %}
+    <div class="table-wrap"><table>
+      <thead><tr><th>N.º</th><th>Centro</th>{% for section in report_sections %}<th>{{ section }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for row in section_load_summary %}
+        <tr>
+          <td>{{ row["N°"] }}</td><td>{{ row.Centro }}</td>
+          {% for section in report_sections %}
+            <td><span class="load-status {% if row[section] %}load-status-done{% else %}load-status-pending{% endif %}">{{ "Cargado" if row[section] else "Pendiente" }}</span></td>
+          {% endfor %}
+        </tr>
+      {% endfor %}</tbody>
     </table></div>
   {% else %}<p>No hay centros registrados.</p>{% endif %}
 </section>
