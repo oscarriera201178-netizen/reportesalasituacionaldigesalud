@@ -87,6 +87,11 @@ mostrar el texto completo.
   registros individuales anteriores de bancos, laboratorios y quirófanos se
   convierten a cantidades al actualizar la base, y se conservan como histórico.
   No se registran bolsas ni existencias de sangre.
+  Al elegir **No**, se ocultan y deshabilitan todos los campos adicionales de
+  ese servicio, incluidos los nombres y estados de laboratorios especiales.
+  Al elegir **Sí**, se despliega su estado o, en quirófanos, sus cantidades
+  operativas y fuera de servicio. Esta presentación también se respeta al
+  consultar secciones guardadas, sin habilitar cambios en secciones bloqueadas.
 - En la vista del centro, **CAMAS HOSPITALARIAS** aparece en negrita y
   mayúsculas, dentro de un cuadro con fondo verde del color primario del tema
   y letras blancas. Su cuadro permite cargar Hospitalización, Observación, Trauma

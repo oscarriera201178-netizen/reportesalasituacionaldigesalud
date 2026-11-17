@@ -471,6 +471,63 @@ class HtmlApplicationTests(unittest.TestCase):
         self.assertEqual(page.status_code, 200)
         self.assertIn(b"Editar secci", page.data)
 
+    def test_facility_details_follow_presence_and_remain_disabled_when_locked(self):
+        self.login("norte", CENTER_PASSWORD)
+        csrf = self.authenticated_csrf()
+        token = self.store.login("norte", CENTER_PASSWORD)
+        center_id = self.center["id"]
+        self.store.initialize_empty_items(token, center_id)
+        for section, fields, count in (
+            ("Banco de sangre", {"presence_0": "Sí", "state_0": "Fuera de servicio"}, 1),
+            ("Laboratorio", {
+                "presence_0": "Sí", "state_0": "Operativo",
+                "presence_1": "Sí", "state_1": "Fuera de servicio",
+                "special_presence": "Sí", "special_name_1": "Especial",
+                "special_state_1": "Operativo",
+            }, 3),
+            ("Quirófano", {
+                "presence_0": "Sí", "qty_0_operational": "1", "qty_0_unavailable": "0",
+                "presence_1": "Sí", "qty_1_operational": "0", "qty_1_unavailable": "2",
+            }, 2),
+        ):
+            with self.subTest(section=section):
+                def check_details(page, *, hidden, disabled):
+                    cards = re.findall(
+                        rb'<fieldset[^>]*data-presence-card[^>]*>(.*?)</fieldset>',
+                        page.data, re.S,
+                    )
+                    self.assertEqual(len(cards), count)
+                    for card in cards:
+                        details = re.search(rb'<div data-presence-details([^>]*)>(.*)', card, re.S)
+                        self.assertIsNotNone(details)
+                        self.assertEqual(b"hidden" in details.group(1), hidden)
+                        controls = re.findall(rb'<(?:input|select)\b[^>]*>', details.group(2))
+                        self.assertTrue(controls)
+                        for control in controls:
+                            self.assertEqual(b"disabled" in control, disabled)
+
+                url = f"/inventory/{center_id}?section={section}"
+                check_details(self.client.get(url), hidden=True, disabled=True)
+                response = self.client.post(f"/inventory/{center_id}/save", data={
+                    "csrf_token": csrf, "section": section, "action": "load", **fields,
+                }, follow_redirects=True)
+                check_details(response, hidden=False, disabled=True)
+                response = self.client.post(f"/inventory/{center_id}/save", data={
+                    "csrf_token": csrf, "section": section, "action": "edit",
+                }, follow_redirects=True)
+                check_details(response, hidden=False, disabled=False)
+                absent = {key: "No" for key in fields if "presence" in key}
+                response = self.client.post(f"/inventory/{center_id}/save", data={
+                    "csrf_token": csrf, "section": section, "action": "load", **absent,
+                }, follow_redirects=True)
+                check_details(response, hidden=True, disabled=True)
+                inventory = self.store.inventory(token, center_id)
+                rows = [row for row in inventory["facility_counts"] if row["category"] == section]
+                self.assertTrue(rows)
+                self.assertTrue(all(row["operational"] + row["unavailable"] == 0 for row in rows))
+                if section == "Laboratorio":
+                    self.assertEqual(inventory["special_laboratories"], [])
+
     def test_all_seven_sections_can_be_loaded_and_submitted(self):
         self.login("norte", CENTER_PASSWORD)
         csrf = self.authenticated_csrf()

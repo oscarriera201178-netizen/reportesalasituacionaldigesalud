@@ -40,7 +40,11 @@
     </details>
   {% endif %}
   {% if rows or presence_items %}
-    <p>Indica las cantidades de cada tipo. Si no tienes unidades, deja 00.</p>
+    {% if rows %}
+      <p>Indica las cantidades de cada tipo. Si no tienes unidades, deja 00.</p>
+    {% else %}
+      <p>Indica si tienes cada servicio. Si eliges Sí, completa su estado o sus cantidades operativas y fuera de servicio.</p>
+    {% endif %}
     <form method="post" action="{{ url_for('save_inventory', center_id=center.id) }}" class="inventory-form" id="inventory-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="section" value="{{ category }}">
@@ -82,29 +86,31 @@
       {% if presence_items %}
         {% for item in presence_items %}
           {% set idx = loop.index0 %}
-          <fieldset class="facility-card" {% if item.with_quantity %}data-facility-card{% endif %}>
+          <fieldset class="facility-card" data-presence-card {% if item.with_quantity %}data-facility-card{% endif %}>
             <legend>{{ item.label }}</legend>
             <span>¿Hay {{ item.label|lower }}?</span>
             <label class="inline"><input type="radio" name="presence_{{ idx }}" value="Sí" {% if item.has %}checked{% endif %} required {% if not editable %}disabled{% endif %}>Sí</label>
             <label class="inline"><input type="radio" name="presence_{{ idx }}" value="No" {% if not item.has %}checked{% endif %} required {% if not editable %}disabled{% endif %}>No</label>
+            <div data-presence-details {% if not item.has %}hidden{% endif %}>
             {% if item.with_quantity %}
               <div class="form-grid">
-                <label>Operativas<input type="number" min="0" max="1000000" name="qty_{{ idx }}_operational" value="{{ item.operational }}" required {% if not editable %}disabled{% endif %}></label>
-                <label>Fuera de servicio<input type="number" min="0" max="1000000" name="qty_{{ idx }}_unavailable" value="{{ item.unavailable }}" required {% if not editable %}disabled{% endif %}></label>
+                <label>Operativas<input type="number" min="0" max="1000000" name="qty_{{ idx }}_operational" value="{{ item.operational }}" required {% if not editable or not item.has %}disabled{% endif %}></label>
+                <label>Fuera de servicio<input type="number" min="0" max="1000000" name="qty_{{ idx }}_unavailable" value="{{ item.unavailable }}" required {% if not editable or not item.has %}disabled{% endif %}></label>
               </div>
               <strong data-facility-total>Total: {{ item.operational + item.unavailable }}</strong>
             {% else %}
               <label>Estado
-                <select name="state_{{ idx }}" {% if item.has %}required{% endif %} {% if not editable %}disabled{% endif %}>
+                <select name="state_{{ idx }}" required {% if not editable or not item.has %}disabled{% endif %}>
                   {% for state in states %}<option {% if item.state == state %}selected{% endif %}>{{ state }}</option>{% endfor %}
                 </select>
               </label>
             {% endif %}
+            </div>
           </fieldset>
         {% endfor %}
       {% endif %}
       {% if category == "Laboratorio" %}
-        <fieldset class="facility-card">
+        <fieldset class="facility-card" data-presence-card>
           <legend>Laboratorios especiales</legend>
           <label>¿Hay laboratorios especiales?
             <select name="special_presence" {% if not editable %}disabled{% endif %}>
@@ -112,17 +118,19 @@
               <option {% if not special_labs %}selected{% endif %}>No</option>
             </select>
           </label>
+          <div data-presence-details {% if not special_labs %}hidden{% endif %}>
           {% for slot in range(1, 4) %}
             {% set laboratory = special_labs|selectattr("slot", "equalto", slot)|first %}
             <div class="form-grid">
-              <label>Nombre {{ slot }}<input name="special_name_{{ slot }}" maxlength="160" value="{{ laboratory.name if laboratory else '' }}" {% if not editable %}disabled{% endif %}></label>
+              <label>Nombre {{ slot }}<input name="special_name_{{ slot }}" maxlength="160" value="{{ laboratory.name if laboratory else '' }}" {% if not editable or not special_labs %}disabled{% endif %}></label>
               <label>Estado {{ slot }}
-                <select name="special_state_{{ slot }}" {% if not editable %}disabled{% endif %}>
+                <select name="special_state_{{ slot }}" {% if not editable or not special_labs %}disabled{% endif %}>
                   {% for state in states %}<option {% if laboratory and laboratory.state == state %}selected{% endif %}>{{ state }}</option>{% endfor %}
                 </select>
               </label>
             </div>
           {% endfor %}
+          </div>
         </fieldset>
       {% endif %}
       {% if editable %}
@@ -159,6 +167,20 @@
   <a class="button button-muted" href="{{ url_for('download_center_report', center_id=center.id, category=pdf_category) }}">Descargar PDF de esta sección</a>
 </section>
 <script>
+document.querySelectorAll("[data-presence-card]").forEach((card) => {
+  const choices = card.querySelectorAll('input[type="radio"], select[name="special_presence"]');
+  const details = card.querySelector("[data-presence-details]");
+  const update = () => {
+    const selected = card.querySelector('input[type="radio"]:checked, select[name="special_presence"]');
+    const present = selected.value === "Sí";
+    details.hidden = !present;
+    details.querySelectorAll("input, select").forEach((input) => {
+      input.disabled = !present || selected.disabled;
+    });
+  };
+  choices.forEach((choice) => choice.addEventListener("change", update));
+  update();
+});
 document.querySelectorAll("[data-quantity-row]").forEach((row) => {
   const inputs = row.querySelectorAll('input[type="number"]');
   const total = row.querySelector(".row-total");
