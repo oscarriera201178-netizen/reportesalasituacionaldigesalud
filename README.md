@@ -631,6 +631,9 @@ La tabla muestra operativas, fuera de servicio y total únicamente de los tipos
 seleccionados. **GENERAR REPORTE** descarga directamente el PDF filtrado, sin
 otro botón de confirmación, para un centro o el consolidado con totales generales.
 El PDF respeta todos los filtros: no incluye otros tipos ni sus cantidades.
+En administración, el detalle en pantalla y los cuadros del PDF solo muestran
+centros con al menos una unidad operativa o fuera de servicio para los filtros
+seleccionados. Los centros sin unidades siguen visibles en el estado semanal.
 Cambiar los filtros actualiza la descarga y su nombre de archivo.
 Equipos incluye el detalle por
 centro y descripción, las sumas por descripción y el total general.

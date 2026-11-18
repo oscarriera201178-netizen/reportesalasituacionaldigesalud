@@ -156,6 +156,9 @@ class ReportTests(unittest.TestCase):
                                 if center_id is None
                                 else {"Norte" if center_id == self.north else "Sur": expected[center_id]}
                             )
+                            if center_id is None and phase == "zero_load":
+                                del pairs["Norte"]
+                                self.assertNotIn("Centro Norte", document[0].get_text())
                             for label, pair in pairs.items():
                                 row = next(
                                     word for word in words
@@ -209,7 +212,9 @@ class ReportTests(unittest.TestCase):
                     text = doc[0].get_text()
                     self.assertIn(expected.upper(), text.upper())
                     self.assertNotIn(excluded.upper(), text.upper())
-                    self.assertEqual("Centro Sur" in text, center_id is None)
+                    self.assertEqual(
+                        "Centro Sur" in text, center_id is None and category != "Plantas eléctricas",
+                    )
                     if category in ("Camas hospitalarias", "Todos los vehículos", "Equipos médicos especiales"):
                         pair = {
                             "Camas hospitalarias": (5, 2),
@@ -410,10 +415,10 @@ class ReportTests(unittest.TestCase):
         self.assertEqual(sum(values[0].get("UCI", [0, 0])[0] for _, values in data), 10)
         with pymupdf.open(stream=generate_pdf(self.store, self.token), filetype="pdf") as doc:
             self.assertEqual(len(doc), 7)
-            for page in doc:
+            for index, page in enumerate(doc):
                 self.assertIn("VICESALUDBSS", page.get_text())
-                self.assertIn("Centro Norte", page.get_text())
-                self.assertIn("Centro Sur", page.get_text())
+                self.assertEqual("Centro Norte" in page.get_text(), index != 6)
+                self.assertEqual("Centro Sur" in page.get_text(), index != 6)
                 self.assertIn("TOTAL GENERAL", page.get_text())
             self.assertIn("SUMA POR DESCRIPCIÓN: Tomógrafo", doc[5].get_text())
             # UCI OPE, UCI INOP, total for the TOTAL GENERAL row.
@@ -543,7 +548,10 @@ class ReportTests(unittest.TestCase):
         store.bootstrap("admin", PASSWORD)
         token = store.login("admin", PASSWORD)
         store.import_centers(token, load_center_catalog())
-        center = store.centers(token)[0]
+        centers = store.centers(token)
+        center = centers[0]
+        for item in centers:
+            store.save_quantity(token, item["id"], "Camas", "UCI", 1, 0)
         with store.transaction() as connection:
             for index in range(20):
                 kind = "Descripción extensa " * 7 + str(index)
@@ -552,7 +560,7 @@ class ReportTests(unittest.TestCase):
                     (center["id"], "Equipos médicos especiales", kind, 1, 0),
                 )
         with pymupdf.open(stream=generate_pdf(store, token), filetype="pdf") as doc:
-            self.assertGreater(len(doc), 25)
+            self.assertGreater(len(doc), 20)
             text = "\n".join(page.get_text() for page in doc)
             self.assertEqual(text.count("TOTAL GENERAL"), 7)
             self.assertEqual(text.count("SUMA POR DESCRIPCIÓN:"), 20)

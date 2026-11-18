@@ -649,6 +649,51 @@ class HtmlApplicationTests(unittest.TestCase):
         self.assertEqual(pdf.mimetype, "application/pdf")
         self.assertEqual(self.client.get("/admin/accounts").status_code, 200)
 
+    def test_admin_inventory_report_shows_only_centers_with_units_matching_filters(self):
+        import pymupdf
+
+        for name, username in (("Centro Sur", "sur"), ("Centro Este", "este")):
+            self.store.create_center(self.admin_token, name, "", username, CENTER_PASSWORD)
+        centers = {center["name"]: center["id"] for center in self.store.centers(self.admin_token)}
+        for name, kind, pair in (
+            ("Centro Norte", "UCI", (0, 3)),
+            ("Centro Sur", "Hospitalización", (2, 0)),
+            ("Centro Sur", "UCI", (0, 0)),
+        ):
+            self.store.save_quantity(self.admin_token, centers[name], "Camas", kind, *pair)
+        self.store.save_quantity(self.admin_token, centers["Centro Norte"], "Vehículos", "Motos", 1, 0)
+        self.store.save_quantity(self.admin_token, centers["Centro Sur"], "Vehículos", "Soporte básico", 0, 1)
+        self.login("admin", ADMIN_PASSWORD)
+
+        def report_outputs(query):
+            page = self.client.get(f"/?{query}")
+            self.assertEqual(page.status_code, 200)
+            table = re.search(
+                r'<table[^>]*aria-label="Detalle por centro de salud"[^>]*>.*?</table>',
+                page.get_data(as_text=True), re.S,
+            )
+            response = self.client.get(f"/reports.pdf?{query}")
+            self.assertEqual(response.status_code, 200)
+            with pymupdf.open(stream=response.data, filetype="pdf") as doc:
+                body = "\n".join(
+                    page.get_text(clip=pymupdf.Rect(0, 205, page.rect.width, 440))
+                    for page in doc
+                )
+            return table[0] if table else "", body
+
+        for query, included in (
+            ("category=Camas", {"Centro Norte", "Centro Sur"}),
+            ("category=Camas&kind=UCI", {"Centro Norte"}),
+            (f"category=Camas&kind=UCI&center={centers['Centro Sur']}", set()),
+            ("category=Vehículos&group=Motos", {"Centro Norte"}),
+            ("category=Vehículos&group=Ambulancias", {"Centro Sur"}),
+        ):
+            with self.subTest(query=query):
+                for output in report_outputs(query):
+                    for name in centers:
+                        self.assertEqual(name in output, name in included, name)
+        self.assertIn("Centro Este", self.client.get("/").get_data(as_text=True).split("Estado semanal")[1])
+
     def test_inventory_return_requires_admin_and_shows_reason_to_center(self):
         center_token = self.store.login("norte", CENTER_PASSWORD)
         self.store.save_quantity(center_token, self.center["id"], "Camas", "UCI", 3, 1)

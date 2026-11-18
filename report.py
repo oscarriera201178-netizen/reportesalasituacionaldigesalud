@@ -13,6 +13,7 @@ from store import (
 
 QUANTITY_TYPES = {"Camas": BED_TYPES, "Ambulancias": AMBULANCE_TYPES, "Vehículos protocolares": VEHICLE_TYPES}
 LABORATORY_GROUPS = ("Central", "Emergencia", "Laboratorios especiales")
+NO_REPORT_UNITS = "No hay centros con unidades registradas para estos filtros."
 SECTIONS = (
     ("CAMAS HOSPITALARIAS", BED_TYPES),
     ("AMBULANCIAS", AMBULANCE_TYPES),
@@ -133,6 +134,34 @@ def report_types(data, category, *, vehicle_group=None):
     return (only,) if only else SECTIONS[section][1]
 
 
+def center_summary(data, category, *, kind=None, vehicle_group=None):
+    if category == "Todos los vehículos":
+        columns = [
+            (1 if group == "Ambulancias" else 2, option)
+            for group, kinds in VEHICLE_GROUPS.items()
+            if vehicle_group in (None, group)
+            for option in kinds if kind in (None, option)
+        ]
+    else:
+        section = SUMMARY_CATEGORIES[category][0]
+        options = report_types(data, category)
+        if category == "Laboratorios" and kind is None:
+            options = LABORATORY_GROUPS
+        columns = [(section, option) for option in options if kind in (None, option)]
+    rows = []
+    for center, sections in data:
+        pairs = [sections[section].get(option, (0, 0)) for section, option in columns]
+        operational = sum(pair[0] for pair in pairs)
+        unavailable = sum(pair[1] for pair in pairs)
+        total = operational + unavailable
+        if total > 0:
+            rows.append({
+                "Centro": center["name"], "Operativas": operational,
+                "Fuera de servicio": unavailable, "Total": total,
+            })
+    return rows
+
+
 def _text(page, rectangle, text, size=9, bold=False, align=1):
     for font_size in (size, size - 1, size - 2, 6):
         shape = page.new_shape()
@@ -152,7 +181,7 @@ def _cell(page, x, y, width, height, text, *, bold=False, size=9):
     _text(page, pymupdf.Rect(x + 3, y + 5, x + width - 3, y + height - 2), text, size, bold)
 
 
-def _table(doc, title, groups, rows, signature, subtitle, timestamp):
+def _table(doc, title, groups, rows, signature, subtitle, timestamp, *, omit_empty=False):
     if len(groups) > 6:
         for start in range(0, len(groups), 6):
             part_rows = [
@@ -162,8 +191,21 @@ def _table(doc, title, groups, rows, signature, subtitle, timestamp):
             _table(
                 doc, title, groups[start:start + 6], part_rows, signature,
                 f"{subtitle} | Total correspondiente a los tipos de este cuadro" if subtitle else "", timestamp,
+                omit_empty=omit_empty,
             )
         return
+    no_units = False
+    if omit_empty:
+        filtered_rows = []
+        number = 0
+        for _, label, values, total_row in rows:
+            if total_row:
+                filtered_rows.append(("", label, values, True))
+            elif sum(values) > 0:
+                number += 1
+                filtered_rows.append((number, label, values, False))
+        rows = filtered_rows
+        no_units = number == 0
     numeric = len(groups) * 2 + 1
     first_width, number_width = 265, 30
     unit = (888 - first_width - number_width) / numeric
@@ -179,6 +221,8 @@ def _table(doc, title, groups, rows, signature, subtitle, timestamp):
         _text(page, pymupdf.Rect(36, 110, 924, 138), title, 18, True)
         if subtitle:
             _text(page, pymupdf.Rect(36, 144, 924, 180), subtitle, 11)
+        if no_units:
+            _text(page, pymupdf.Rect(36, 182, 924, 204), NO_REPORT_UNITS, 10)
         y = 205
         _cell(page, 36, y, number_width, 60, "N.º", bold=True)
         _cell(page, 66, y, first_width, 60, "CENTRO / DESCRIPCIÓN", bold=True)
@@ -204,7 +248,10 @@ def _table(doc, title, groups, rows, signature, subtitle, timestamp):
         _text(page, pymupdf.Rect(36, 522, 924, 538), "OPE: operativo | INOP: inoperativo | 0: sin unidades registradas", 8)
 
 
-def generate_pdf(store, token, center_id=None, *, category=None, kind=None, vehicle_group=None):
+def generate_pdf(
+    store, token, center_id=None, *, category=None, kind=None, vehicle_group=None,
+    omit_empty=False,
+):
     if category is not None and category not in SUMMARY_CATEGORIES and category != "Todos los vehículos":
         raise InventoryError("Categoría de informe no válida.")
     data = report_data(store, token, center_id)
@@ -215,6 +262,7 @@ def generate_pdf(store, token, center_id=None, *, category=None, kind=None, vehi
         if kind is not None and kind not in options:
             raise InventoryError("Tipo de informe no válido para la categoría seleccionada.")
     consolidated = center_id is None
+    omit_empty = omit_empty or consolidated
     if not data:
         raise InventoryError("No hay centros registrados para generar el informe.")
     signature = "CONSOLIDADO GENERAL - ADMINISTRACIÓN" if consolidated else f"DIRECTOR DEL {data[0][0]['name']}"
@@ -241,7 +289,10 @@ def generate_pdf(store, token, center_id=None, *, category=None, kind=None, vehi
                     totals = [left + right for left, right in zip(totals, cells)]
                 if consolidated:
                     rows.append(("", "TOTAL GENERAL", totals, True))
-                _table(doc, f"{title} {title_suffix}", groups, rows, signature, subtitle, timestamp)
+                _table(
+                    doc, f"{title} {title_suffix}", groups, rows, signature, subtitle, timestamp,
+                    omit_empty=omit_empty,
+                )
             return doc.tobytes(garbage=4, deflate=True)
         for section, (title, groups) in enumerate(SECTIONS):
             only = None
@@ -276,25 +327,25 @@ def generate_pdf(store, token, center_id=None, *, category=None, kind=None, vehi
             else:
                 groups = ("Situación",)
                 totals = [0, 0]
+                descriptions = defaultdict(lambda: [0, 0])
                 for center, values in data:
                     equipment = values[5] if kind is None else {kind: values[5].get(kind, [0, 0])}
                     for description, pair in sorted(equipment.items()):
-                        if kind not in (None, description):
+                        if omit_empty and sum(pair) == 0:
                             continue
                         label = f"{center['name']} / {description}" if consolidated else description
                         rows.append((len(rows) + 1, label, pair, False))
                         totals = [left + right for left, right in zip(totals, pair)]
-                if consolidated:
-                    descriptions = defaultdict(lambda: [0, 0])
-                    for _, values in data:
-                        for description, pair in values[5].items():
-                            if kind not in (None, description):
-                                continue
+                        if consolidated:
                             descriptions[description] = [left + right for left, right in zip(descriptions[description], pair)]
+                if consolidated:
                     for description, pair in sorted(descriptions.items()):
                         rows.append(("", f"SUMA POR DESCRIPCIÓN: {description}", pair, True))
                 rows.append(("", "TOTAL GENERAL" if consolidated else "TOTAL", totals, True))
-            _table(doc, f"{title} {title_suffix}", groups, rows, signature, subtitle, timestamp)
+            _table(
+                doc, f"{title} {title_suffix}", groups, rows, signature, subtitle, timestamp,
+                omit_empty=omit_empty,
+            )
             if section == 4 and only != "Banco de sangre" and (
                 kind in (None, "Laboratorios especiales") or kind.startswith("Laboratorio especial: ")
             ):

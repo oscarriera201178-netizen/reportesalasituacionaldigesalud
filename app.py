@@ -16,7 +16,7 @@ from streamlit.errors import StreamlitSecretNotFoundError
 from database import DATABASE_ERRORS
 
 from report import (
-    SUMMARY_CATEGORIES, generate_pdf, report_data, report_types,
+    NO_REPORT_UNITS, SUMMARY_CATEGORIES, center_summary, generate_pdf, report_data, report_types,
 )
 from store import (
     AccessError, InventoryError,
@@ -756,7 +756,7 @@ def category_summary(store, token, center_id, category, *, kind=None, vehicle_gr
 
 def pdf_download(
     store, token, center_id=None, *, widget_scope=None, category=None,
-    kind=None, vehicle_group=None, label="DESCARGAR PDF",
+    kind=None, vehicle_group=None, label="DESCARGAR PDF", omit_empty=False,
 ):
     key = "all" if center_id is None else str(center_id)
     widget_key = f"{widget_scope}_{key}" if widget_scope else key
@@ -771,6 +771,7 @@ def pdf_download(
     if previous and (
         previous["snapshot"] != snapshot or previous.get("category") != category
         or previous.get("kind") != kind or previous.get("vehicle_group") != vehicle_group
+        or previous.get("omit_empty") != omit_empty
     ):
         del st.session_state[export_key]
     export = st.session_state.get(export_key)
@@ -779,13 +780,14 @@ def pdf_download(
             with st.spinner("Preparando el PDF…"):
                 data = generate_pdf(
                     store, token, center_id, category=category, kind=kind, vehicle_group=vehicle_group,
+                    omit_empty=omit_empty,
                 )
         except InventoryError as error:
             st.error(str(error))
             return
         st.session_state[export_key] = {
             "snapshot": snapshot, "category": category, "kind": kind,
-            "vehicle_group": vehicle_group, "data": data,
+            "vehicle_group": vehicle_group, "omit_empty": omit_empty, "data": data,
         }
         export = st.session_state[export_key]
     st.download_button(
@@ -843,9 +845,15 @@ def admin_reports(store, token, centers):
         category_summary(store, token, center_id, category, kind=kind, vehicle_group=group),
         width="stretch", hide_index=True,
     )
+    st.subheader("Detalle por centro de salud")
+    center_rows = center_summary(data, category, kind=kind, vehicle_group=group)
+    if center_rows:
+        st.dataframe(center_rows, width="stretch", hide_index=True)
+    else:
+        st.info(NO_REPORT_UNITS)
     pdf_download(
         store, token, center_id, widget_scope="summary",
-        category=category, kind=kind, vehicle_group=group, label="GENERAR REPORTE",
+        category=category, kind=kind, vehicle_group=group, label="GENERAR REPORTE", omit_empty=True,
     )
 
 

@@ -55,6 +55,17 @@
       <tbody>{% for row in rows %}<tr class="{% if row.Tipo == 'TOTAL' %}total-row{% endif %}">{% for value in row.values() %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
     </table>
   </div>
+  <h3>Detalle por centro de salud</h3>
+  {% if center_rows %}
+    <div class="table-wrap">
+      <table aria-label="Detalle por centro de salud">
+        <thead><tr>{% for key in center_rows[0] %}<th>{{ key }}</th>{% endfor %}</tr></thead>
+        <tbody>{% for row in center_rows %}<tr>{% for value in row.values() %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+      </table>
+    </div>
+  {% else %}
+    <p>{{ no_report_units }}</p>
+  {% endif %}
   <a class="button button-primary" href="{{ url_for('download_report', category=category, center=center_id, group=vehicle_group or '', kind=kind or '') }}">Generar reporte PDF</a>
 </section>
 <section class="panel">

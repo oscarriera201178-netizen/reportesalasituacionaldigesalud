@@ -15,7 +15,8 @@ from flask import (
 )
 
 from report import (
-    SUMMARY_CATEGORIES, generate_military_pdf, generate_pdf, report_data, report_types,
+    LABORATORY_GROUPS, NO_REPORT_UNITS, SUMMARY_CATEGORIES, center_summary,
+    generate_military_pdf, generate_pdf, report_data, report_types,
 )
 from database import DATABASE_ERRORS
 from store import (
@@ -261,11 +262,12 @@ def create_app(store=None, *, secret_key=None):
         if kind not in options:
             kind = None
         rows = summary_rows(data, report_category, kind=kind, vehicle_group=vehicle_group)
+        center_rows = center_summary(data, report_category, kind=kind, vehicle_group=vehicle_group)
         reported = sum(row["Estado"] == REPORT_LOADED for row in summary)
         return render_template(
             "admin.html", centers=centers, summary=summary,
             section_load_summary=section_load_summary, report_sections=REPORT_SECTIONS,
-            rows=rows,
+            rows=rows, center_rows=center_rows, no_report_units=NO_REPORT_UNITS,
             categories=REPORT_CATEGORIES, category=category,
             report_category=report_category, center_id=selected_center,
             vehicle_group=vehicle_group, vehicle_groups=VEHICLE_GROUPS,
@@ -327,6 +329,8 @@ def create_app(store=None, *, secret_key=None):
 
     def summary_rows(data, category, *, kind=None, vehicle_group=None):
         options = report_types(data, category, vehicle_group=vehicle_group)
+        if category == "Laboratorios" and kind is None:
+            options = LABORATORY_GROUPS
         totals = {option: [0, 0] for option in options if kind in (None, option)}
         for _center, sections in data:
             values_by_type = (
@@ -969,7 +973,7 @@ def create_app(store=None, *, secret_key=None):
         kind = request.args.get("kind") or None
         data = generate_pdf(
             get_store(), token(), center_id, category=category, kind=kind,
-            vehicle_group=group,
+            vehicle_group=group, omit_empty=True,
         )
         return send_file(
             io.BytesIO(data), as_attachment=True,

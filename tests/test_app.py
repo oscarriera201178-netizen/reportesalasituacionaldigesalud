@@ -1314,7 +1314,7 @@ class AppTests(unittest.TestCase):
 
     def test_summary_pdf_tracks_category_and_center_filters(self):
         from app import REPORT_CATEGORIES
-        from report import SECTIONS
+        from report import NO_REPORT_UNITS, SECTIONS
 
         self.store.bootstrap("admin", PASSWORD)
         token = self.store.login("admin", PASSWORD)
@@ -1354,12 +1354,18 @@ class AppTests(unittest.TestCase):
                     self.assertEqual(app.get("download_button")[0].label, "GENERAR REPORTE")
                     report_category = REPORT_CATEGORIES[category]
                     app.selectbox(key=f"summary_kind_{report_category}").select("all").run()
+                    has_units = category == "Equipos médicos especiales"
+                    if has_units:
+                        names = ["Centro Norte", "Centro Sur"] if center_id == "all" else ["Centro Norte"]
+                        self.assertEqual(app.dataframe[1].value["Centro"].tolist(), names)
+                    else:
+                        self.assertTrue(any(message.value == NO_REPORT_UNITS for message in app.info))
                     with pymupdf.open(stream=app.session_state[export_key]["data"], filetype="pdf") as doc:
                         self.assertEqual(len(doc), 5 if category == "Vehículos" else 1)
                         text = "\n".join(page.get_text() for page in doc)
                         self.assertIn(title, text)
-                        self.assertIn("Centro Norte", text)
-                        self.assertEqual("Centro Sur" in text, center_id == "all")
+                        self.assertEqual("Centro Norte" in text, has_units or center_id == north)
+                        self.assertEqual("Centro Sur" in text, has_units and center_id == "all")
                         if category == "Banco de sangre":
                             self.assertNotIn("LABORATORIO", text)
                         elif category == "Laboratorio":
@@ -1374,8 +1380,9 @@ class AppTests(unittest.TestCase):
                         with pymupdf.open(stream=app.session_state[export_key]["data"], filetype="pdf") as doc:
                             self.assertEqual(len(doc), 1)
                             text = doc[0].get_text()
-                            self.assertIn("Centro Norte", text)
-                            self.assertEqual("Centro Sur" in text, center_id == "all")
+                            has_units = category == "Equipos médicos especiales" and kind == "Tomógrafo"
+                            self.assertEqual("Centro Norte" in text, has_units or center_id == north)
+                            self.assertEqual("Centro Sur" in text, has_units and center_id == "all")
 
     def test_no_public_bootstrap_or_inventory(self):
         app = AppTest.from_file(APP, default_timeout=30).run()
