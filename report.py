@@ -35,6 +35,14 @@ SUMMARY_CATEGORIES = {
     "Equipos médicos especiales": (5, None),
     "Plantas eléctricas": (6, None),
 }
+CENTER_INVENTORY_CATEGORIES = {
+    "Camas hospitalarias",
+    "Bancos de sangre",
+    "Laboratorios",
+    "Quirófanos",
+    "Equipos médicos especiales",
+    "Plantas eléctricas",
+}
 MILITARY_TITLE_CATEGORIES = (
     "Camas hospitalarias",
     "Bancos de sangre",
@@ -364,17 +372,18 @@ def generate_pdf(
     if not data:
         raise InventoryError("No hay centros registrados para generar el informe.")
     military_title = consolidated and category in MILITARY_TITLE_CATEGORIES
-    subtitle = "" if military_title else (
-        "SUMATORIA DE TODOS LOS CENTROS"
-        if consolidated and category not in (
-            "Equipos médicos especiales", "Todos los vehículos",
-        )
-        else (
+    if military_title:
+        subtitle = ""
+    elif consolidated and category not in (
+        "Equipos médicos especiales", "Todos los vehículos",
+    ):
+        subtitle = "SUMATORIA DE TODOS LOS CENTROS"
+    else:
+        subtitle = (
             f"CENTRO DE SALUD: {data[0][0]['name']}"
             if not consolidated
             else ""
         )
-    )
     title_suffix = (
         "DE LA RED SANITARIA MILITAR"
         if military_title
@@ -506,10 +515,23 @@ def generate_pdf(
             report_title = (
                 title if category == "Equipos médicos especiales" else f"{title} {title_suffix}"
             )
+            table_subtitle = (
+                ""
+                if not consolidated and (
+                    category in CENTER_INVENTORY_CATEGORIES
+                    or (category is None and section in (0, 3, 4, 5, 6))
+                )
+                else subtitle
+            )
             _table(
-                doc, report_title, groups, rows, subtitle, timestamp,
+                doc, report_title, groups, rows, table_subtitle, timestamp,
                 omit_empty=omit_empty,
-                title_align=1 if military_title or section in (2, 5) else 0,
+                title_align=1 if (
+                    military_title
+                    or category in CENTER_INVENTORY_CATEGORIES
+                    or (category is None and section in (0, 3, 4, 5, 6))
+                    or section in (2, 5)
+                ) else 0,
             )
             if section == 4 and only != "Banco de sangre" and (
                 kind in (None, "Laboratorios especiales") or kind.startswith("Laboratorio especial: ")
@@ -525,8 +547,10 @@ def generate_pdf(
                 if special_rows:
                     _table(
                         doc, f"LABORATORIOS ESPECIALES {title_suffix}", ("Situación",), special_rows,
-                        subtitle, timestamp,
-                        title_align=1 if military_title else 0,
+                        table_subtitle, timestamp,
+                        title_align=1 if (
+                            military_title or category in CENTER_INVENTORY_CATEGORIES
+                        ) else 0,
                     )
         return doc.tobytes(garbage=4, deflate=True)
 

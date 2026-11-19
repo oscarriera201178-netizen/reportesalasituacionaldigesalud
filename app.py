@@ -353,7 +353,7 @@ def quantity_grid(center_id, category, quantities, *, editable, kind_label, head
 
 
 def bed_panel(store, token, center_id, quantities, *, editable):
-    inventory_heading("CAMAS HOSPITALARIAS")
+    inventory_heading("CAMAS HOSPITALARIAS", centered=True)
     values = quantity_grid(
         center_id, "Camas", quantities, editable=editable, kind_label="Tipo de cama",
     )
@@ -405,7 +405,10 @@ def uppercase_input(key):
 
 def facility_presence_panel(store, token, center_id, rows, category, *, editable, special_rows=()):
     if category in ("Laboratorio", "Quirófano"):
-        inventory_heading("LABORATORIO" if category == "Laboratorio" else "QUIRÓFANOS")
+        inventory_heading(
+            "LABORATORIO" if category == "Laboratorio" else "QUIRÓFANOS",
+            centered=True,
+        )
         values = {}
         sections = (
             ("Laboratorio", "Laboratorio central", "laboratory"),
@@ -474,7 +477,7 @@ def facility_presence_panel(store, token, center_id, rows, category, *, editable
         return
     name = category.lower()
     widget_prefix = "blood_bank"
-    inventory_heading(category.upper())
+    inventory_heading(category.upper(), centered=True)
     selected = presence_fields(
         center_id, rows, category, category, name, widget_prefix, editable=editable,
     )
@@ -646,7 +649,7 @@ def quantity_panel(
 
 
 def equipment_panel(store, token, center_id, rows, *, editable=True, history=()):
-    inventory_heading("EQUIPOS MÉDICOS ESPECIALES")
+    inventory_heading("EQUIPOS MÉDICOS ESPECIALES", centered=True)
     if history:
         with st.expander("Historial de equipos anteriores"):
             st.caption("Solo historial. Estos registros no se suman al inventario actual.")
@@ -900,7 +903,7 @@ def center_view(store, token, center_id):
             history=inventory["equipment"],
         )
     elif selected_category == "Plantas eléctricas":
-        inventory_heading("PLANTAS ELÉCTRICAS")
+        inventory_heading("PLANTAS ELÉCTRICAS", centered=True)
         existing = {row["kind"]: row for row in inventory["plant_counts"]}
         values = quantity_grid(
             center_id, selected_category,
