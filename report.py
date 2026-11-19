@@ -228,7 +228,7 @@ def _table(doc, title, groups, rows, signature, subtitle, timestamp, *, omit_emp
                 pymupdf.Rect(36, 8, 924, 96), banner, 0,
                 clip=pymupdf.Rect(0, 0, 960, 95),
             )
-        _text(page, pymupdf.Rect(36, 110, 924, 138), title, 18, True)
+        _text(page, pymupdf.Rect(36, 110, 924, 138), title.rstrip("."), 18, True)
         if subtitle:
             _text(page, pymupdf.Rect(36, 144, 924, 180), subtitle, 11)
         if no_units:
@@ -338,6 +338,36 @@ def generate_pdf(
                 )
             if kind is not None:
                 groups = (kind,)
+            if section == 5 and category == "Equipos médicos especiales" and consolidated:
+                equipment_kinds = (
+                    (kind,) if kind is not None
+                    else tuple(sorted({equipment for _, values in data for equipment in values[5]}))
+                )
+                rendered = False
+                for equipment_kind in equipment_kinds:
+                    rows = []
+                    totals = [0, 0]
+                    for center, values in data:
+                        pair = values[5].get(equipment_kind, [0, 0])
+                        if not sum(pair):
+                            continue
+                        rows.append((len(rows) + 1, center["name"], pair, False))
+                        totals = [left + right for left, right in zip(totals, pair)]
+                    if not rows:
+                        continue
+                    rows.append(("", "TOTAL GENERAL", totals, True))
+                    _table(
+                        doc, title, (f"{equipment_kind.upper()}\nSITUACIÓN",), rows,
+                        signature, subtitle, timestamp, omit_empty=omit_empty,
+                    )
+                    rendered = True
+                if not rendered:
+                    empty_heading = f"{kind.upper()}\nSITUACIÓN" if kind else "SITUACIÓN"
+                    _table(
+                        doc, title, (empty_heading,), [("", "TOTAL GENERAL", [0, 0], True)],
+                        signature, subtitle, timestamp, omit_empty=omit_empty,
+                    )
+                continue
             rows = []
             if section != 5:
                 totals = [0] * (len(groups) * 2)
@@ -490,7 +520,7 @@ def generate_military_pdf(
                     title = "Militares Fallecidos en Centros de Salud"
                 else:
                     title = f"Registro de Militares Fallecidos en el Componente {name}"
-                _text(page, pymupdf.Rect(28, 104, 932, 135), title, 16, True)
+                _text(page, pymupdf.Rect(28, 104, 932, 135), title.rstrip("."), 16, True)
                 x, y = left, 145
                 for header, width in zip(headers, widths):
                     _cell(page, x, y, width, 31, header, bold=True, size=7)
