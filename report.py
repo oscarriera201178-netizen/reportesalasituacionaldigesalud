@@ -59,6 +59,15 @@ SPECIAL_EQUIPMENT_TITLE_TYPES = {
     "Silla odontológica": "SILLAS ODONTOLÓGICAS",
     "Máquina para Hemodiálisis": "MÁQUINAS PARA HEMODIÁLISIS",
 }
+BED_TABLE_HEADINGS = {
+    "Cama de Hosp. Adultos": "CAMA DE HOSP.\nADULTOS",
+    "Cama de Hosp. Pediátricas": "CAMA DE HOSP.\nPEDIÁTRICAS",
+    "Cama de Observación": "CAMA DE\nOBSERVACIÓN",
+    "Cama de Trauma Shock": "CAMA DE TRAUMA\nSHOCK",
+    "Cama de UTIA": "CAMA DE\nUTIA",
+    "Cama de UTIP": "CAMA DE\nUTIP",
+    "Cama de UCI": "CAMA DE\nUCI",
+}
 
 
 def normalized(value):
@@ -292,14 +301,16 @@ def _header_cell(page, x, y, width, height, text):
 def _table(
     doc, title, groups, rows, subtitle, timestamp, *, omit_empty=False, title_align=0,
 ):
-    if len(groups) > 6:
-        for start in range(0, len(groups), 6):
+    bed_table = tuple(groups) == BED_TYPES
+    max_groups = 7 if bed_table else 6
+    if len(groups) > max_groups:
+        for start in range(0, len(groups), max_groups):
             part_rows = [
-                (number, label, values[start * 2:(start + 6) * 2], total)
+                (number, label, values[start * 2:(start + max_groups) * 2], total)
                 for number, label, values, total in rows
             ]
             _table(
-                doc, title, groups[start:start + 6], part_rows,
+                doc, title, groups[start:start + max_groups], part_rows,
                 f"{subtitle} | Total correspondiente a los tipos de este cuadro" if subtitle else "", timestamp,
                 omit_empty=omit_empty, title_align=title_align,
             )
@@ -317,13 +328,14 @@ def _table(
         rows = filtered_rows
         no_units = number == 0
     numeric = len(groups) * 2 + 1
-    first_width, number_width = 265, 30
+    first_width, number_width = (175 if bed_table else 265), 30
     unit = (888 - first_width - number_width) / numeric
+    row_height = 40 if bed_table else 32
     # Repeat complete headings and totals across pages without splitting a row.
     title_height = TITLE_LINE_HEIGHT
     title_offset = title_height - TITLE_LINE_HEIGHT
     table_y = 205 + title_offset
-    rows_per_page = min(5, (490 - table_y - 60) // 32)
+    rows_per_page = min(5, (490 - table_y - 60) // row_height)
     if table_y + 60 > 490:
         raise InventoryError("El título del PDF no deja espacio para la tabla.")
     if rows and rows_per_page < 1:
@@ -360,7 +372,8 @@ def _table(
         for group in groups:
             _header_cell(
                 page, x, y, unit * 2, 30,
-                group.removeprefix("Laboratorio especial: ").upper(),
+                BED_TABLE_HEADINGS[group]
+                if bed_table else group.removeprefix("Laboratorio especial: ").upper(),
             )
             _cell(page, x, y + 30, unit, 30, "OPE", bold=True, size=8)
             _cell(page, x + unit, y + 30, unit, 30, "INOP", bold=True, size=8)
@@ -368,13 +381,13 @@ def _table(
         _cell(page, x, y, unit, 60, "TOTAL", bold=True, size=8)
         y += 60
         for number, label, values, total_row in chunk:
-            _cell(page, 36, y, number_width, 32, number, bold=total_row, size=8)
-            _cell(page, 66, y, first_width, 32, label, bold=total_row, size=8)
+            _cell(page, 36, y, number_width, row_height, number, bold=total_row, size=8)
+            _cell(page, 66, y, first_width, row_height, label, bold=total_row, size=8)
             x = 66 + first_width
             for value in (*values, sum(values)):
-                _cell(page, x, y, unit, 32, value, bold=total_row, size=8)
+                _cell(page, x, y, unit, row_height, value, bold=total_row, size=8)
                 x += unit
-            y += 32
+            y += row_height
         _text(page, pymupdf.Rect(36, 490, 924, 505), "FUENTE: Sala Situacional/DIGESALUD", 9, align=0)
         _text(page, pymupdf.Rect(36, 506, 924, 521), f"{timestamp} | Parte {part}/{len(chunks)}", 8, align=0)
         _text(page, pymupdf.Rect(36, 522, 924, 538), "OPE: operativo | INOP: inoperativo | 0: sin unidades registradas", 8)

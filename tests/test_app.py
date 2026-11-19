@@ -406,7 +406,7 @@ class AppTests(unittest.TestCase):
         app.session_state["token"] = token
         app.run()
         for category, expected_titles, pages in (
-            ("Camas", ("CAMAS HOSPITALARIAS",), 2),
+            ("Camas", ("CAMAS HOSPITALARIAS",), 1),
             ("Vehículos", (
                 "AMBULANCIAS", "VEHÍCULOS PROTOCOLARES",
                 "CARGA PESADA (CAMIONES Y GANDOLAS)",
@@ -610,9 +610,8 @@ class AppTests(unittest.TestCase):
         with pymupdf.open(
             stream=app.session_state[f"_pdf_export_{center_id}"]["data"], filetype="pdf",
         ) as document:
-            self.assertEqual(len(document), 2)
+            self.assertEqual(len(document), 1)
             self.assertIn("CAMAS HOSPITALARIAS", document[0].get_text())
-            self.assertIn("CAMAS HOSPITALARIAS", document[1].get_text())
         app.button(key="inventory_category_Banco de sangre").click().run()
         self.assertEqual(len(app.get("download_button")), 1)
         app.button(key=f"edit_section_{center_id}_Banco de sangre").click().run()
@@ -1400,7 +1399,7 @@ class AppTests(unittest.TestCase):
                         self.assertTrue(any(message.value == NO_REPORT_UNITS for message in app.info))
                     with pymupdf.open(stream=app.session_state[export_key]["data"], filetype="pdf") as doc:
                         self.assertEqual(
-                            len(doc), 5 if category == "Vehículos" else 2 if category == "Camas" else 1,
+                            len(doc), 5 if category == "Vehículos" else 1,
                         )
                         text = "\n".join(page.get_text() for page in doc)
                         self.assertIn(title, text)

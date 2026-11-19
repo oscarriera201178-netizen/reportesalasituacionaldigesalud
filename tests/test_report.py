@@ -753,7 +753,7 @@ class ReportTests(unittest.TestCase):
         self.populate(self.north)
         data = generate_pdf(self.store, self.token, self.north)
         with pymupdf.open(stream=data, filetype="pdf") as doc:
-            self.assertEqual(len(doc), 8)
+            self.assertEqual(len(doc), 7)
             for page in doc:
                 self.assertEqual((page.rect.width, page.rect.height), (960, 540))
                 text = page.get_text()
@@ -763,9 +763,32 @@ class ReportTests(unittest.TestCase):
                 self.assertNotIn("CONSOLIDADO GENERAL - ADMINISTRACIÓN", text)
                 self.assertNotIn("Centro Sur", text)
                 self.assertIn("FUENTE: Sala Situacional/DIGESALUD", text)
-            self.assertIn("CAMA DE UCI", doc[1].get_text())
-            self.assertIn("Tomógrafo", doc[6].get_text())
-            self.assertNotIn("monitor", doc[6].get_text())
+            bed_text = doc[0].get_text()
+            for heading in (
+                "ADULTOS", "PEDIÁTRICAS", "OBSERVACIÓN", "TRAUMA", "UTIA", "UTIP", "UCI",
+            ):
+                self.assertIn(heading, bed_text)
+            self.assertIn("CAMA DE\nUCI", bed_text)
+            bed_spans = [
+                span
+                for block in doc[0].get_text("dict")["blocks"]
+                for line in block.get("lines", [])
+                for span in line["spans"]
+            ]
+            bed_heading_spans = [
+                span for span in bed_spans
+                if 241 <= span["bbox"][0] < 886 and 205 <= span["bbox"][1] < 235
+            ]
+            self.assertEqual(len(bed_heading_spans), 14)
+            self.assertEqual({span["size"] for span in bed_heading_spans}, {9})
+            center_description_spans = [
+                span for span in bed_spans
+                if 66 <= span["bbox"][0] < 241 and 265 <= span["bbox"][1] < 485
+            ]
+            self.assertTrue(center_description_spans)
+            self.assertEqual({span["size"] for span in center_description_spans}, {8})
+            self.assertIn("Tomógrafo", doc[5].get_text())
+            self.assertNotIn("monitor", doc[5].get_text())
 
     def test_consolidated_totals_include_every_center_once(self):
         self.populate(self.north)
@@ -773,15 +796,15 @@ class ReportTests(unittest.TestCase):
         data = report_data(self.store, self.token)
         self.assertEqual(sum(values[0].get("Cama de UCI", [0, 0])[0] for _, values in data), 10)
         with pymupdf.open(stream=generate_pdf(self.store, self.token), filetype="pdf") as doc:
-            self.assertEqual(len(doc), 8)
+            self.assertEqual(len(doc), 7)
             for index, page in enumerate(doc):
                 self.assertIn("VICESALUDBSS", page.get_text())
-                self.assertEqual("Centro Norte" in page.get_text(), index not in (0, 7))
-                self.assertEqual("Centro Sur" in page.get_text(), index not in (0, 7))
+                self.assertEqual("Centro Norte" in page.get_text(), index != 6)
+                self.assertEqual("Centro Sur" in page.get_text(), index != 6)
                 self.assertIn("TOTAL GENERAL", page.get_text())
-            self.assertIn("SUMA POR DESCRIPCIÓN: Tomógrafo", doc[6].get_text())
+            self.assertIn("SUMA POR DESCRIPCIÓN: Tomógrafo", doc[5].get_text())
             # Cama de UCI OPE, INOP and total for the TOTAL GENERAL row.
-            words = doc[1].get_text("words")
+            words = doc[0].get_text("words")
             total_word = next(word for word in words if word[4] == "GENERAL")
             numbers = [word[4] for word in words if abs(word[1] - total_word[1]) < 1 and word[0] > 331]
             self.assertEqual(numbers[-3:], ["10", "4", "14"])
@@ -944,7 +967,7 @@ class ReportTests(unittest.TestCase):
         with pymupdf.open(stream=generate_pdf(store, token), filetype="pdf") as doc:
             self.assertGreater(len(doc), 20)
             text = "\n".join(page.get_text() for page in doc)
-            self.assertEqual(text.count("TOTAL GENERAL"), 8)
+            self.assertEqual(text.count("TOTAL GENERAL"), 7)
             self.assertEqual(text.count("SUMA POR DESCRIPCIÓN:"), 20)
             for page in doc:
                 for word in page.get_text("words"):
