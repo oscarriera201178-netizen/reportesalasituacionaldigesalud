@@ -367,8 +367,11 @@ def generate_pdf(
                     for description, pair in sorted(descriptions.items()):
                         rows.append(("", f"SUMA POR DESCRIPCIÓN: {description}", pair, True))
                 rows.append(("", "TOTAL GENERAL" if consolidated else "TOTAL", totals, True))
+            report_title = (
+                title if category == "Equipos médicos especiales" else f"{title} {title_suffix}"
+            )
             _table(
-                doc, f"{title} {title_suffix}", groups, rows, signature, subtitle, timestamp,
+                doc, report_title, groups, rows, signature, subtitle, timestamp,
                 omit_empty=omit_empty,
             )
             if section == 4 and only != "Banco de sangre" and (

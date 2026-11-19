@@ -276,8 +276,18 @@ class ReportTests(unittest.TestCase):
                         f"EQUIPOS MÉDICOS ESPECIALES ({plural}) DE LA RED SANITARIA MILITAR.",
                         text,
                     )
+                    self.assertNotIn("DE TODOS LOS CENTROS DE SALUD", text)
                     self.assertNotIn("SUMATORIA DE TODOS LOS CENTROS", text)
                     self.assertNotIn("SUMA POR DESCRIPCIÓN:", text)
+                    title_span = next(
+                        span
+                        for block in document[0].get_text("dict")["blocks"]
+                        if "lines" in block
+                        for line in block["lines"]
+                        for span in line["spans"]
+                        if span["text"].startswith("EQUIPOS MÉDICOS ESPECIALES")
+                    )
+                    self.assertEqual(title_span["size"], 16)
                     for center_name in center_names:
                         self.assertIn(center_name, text)
                         self.assertNotIn(f"{center_name} /", text)
@@ -422,7 +432,12 @@ class ReportTests(unittest.TestCase):
                             word[4] for word in page.get_text("words")
                             if 109.99 <= word[1] and word[3] <= 138.01
                         )
-                        self.assertTrue(title.endswith(suffix), title)
+                        if category == "Equipos médicos especiales":
+                            self.assertEqual(
+                                title, "EQUIPOS MÉDICOS ESPECIALES DE LA RED SANITARIA MILITAR.",
+                            )
+                        else:
+                            self.assertTrue(title.endswith(suffix), title)
                         self.assertIn("VICESALUDBSS", page.get_text())
                         words = page.get_text("words")
                         self.assertFalse(any(138.01 < word[1] < 204.99 for word in words))
