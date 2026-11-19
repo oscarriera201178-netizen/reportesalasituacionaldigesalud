@@ -148,7 +148,7 @@ mostrar el texto completo.
   también incluye un cuadro con sus nombres y estados.
 - **EQUIPOS MÉDICOS ESPECIALES** presenta ocho tipos fijos: Máquina de anestesia,
   Tomógrafo, Resonador, Radiología, Ecógrafo, Arco en C, Silla odontológica y
-  Silla para diálisis. Los títulos tienen fondo verde. Se cargan cantidades
+  Máquina para Hemodiálisis. Los títulos tienen fondo verde. Se cargan cantidades
   operativas e inoperativas, con totales automáticos; se permiten varias unidades
   por tipo. No se piden código, marca, modelo ni serie. **Cargar datos** guarda
   los ocho tipos juntos sin enviar la semana. Los equipos individuales anteriores

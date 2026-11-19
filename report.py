@@ -43,7 +43,7 @@ SPECIAL_EQUIPMENT_TITLE_TYPES = {
     "Ecógrafo": "ECÓGRAFOS",
     "Arco en C": "ARCOS EN C",
     "Silla odontológica": "SILLAS ODONTOLÓGICAS",
-    "Silla para diálisis": "SILLAS PARA DIÁLISIS",
+    "Máquina para Hemodiálisis": "MÁQUINAS PARA HEMODIÁLISIS",
 }
 
 
@@ -187,42 +187,34 @@ def _text(page, rectangle, text, size=9, bold=False, align=1):
     raise InventoryError(f"No se pudo ajustar el texto del PDF: {str(text)[:60]}")
 
 
-def _title_lines(rectangle, text):
+def _title_font_size(rectangle, text):
     rectangle = pymupdf.Rect(rectangle)
     font = pymupdf.Font("hebo")
-    lines = []
-    for word in str(text).split():
-        candidate = f"{lines[-1]} {word}" if lines else word
-        if font.text_length(candidate, fontsize=TITLE_FONT_SIZE) <= rectangle.width:
-            if lines:
-                lines[-1] = candidate
-            else:
-                lines.append(candidate)
-        elif font.text_length(word, fontsize=TITLE_FONT_SIZE) <= rectangle.width:
-            lines.append(word)
-        else:
-            raise InventoryError("El título del PDF contiene una palabra demasiado larga.")
-    if not lines:
+    text = " ".join(str(text).split())
+    if not text:
         raise InventoryError("El título del PDF no puede estar vacío.")
-    return lines
+    text_width = font.text_length(text, fontsize=TITLE_FONT_SIZE)
+    if text_width <= rectangle.width:
+        return TITLE_FONT_SIZE
+    return TITLE_FONT_SIZE * rectangle.width / text_width - 0.01
 
 
 def _title(page, rectangle, text, *, align=0):
     rectangle = pymupdf.Rect(rectangle)
-    lines = _title_lines(rectangle, text)
+    text = " ".join(str(text).split())
     title_rect = pymupdf.Rect(
         rectangle.x0, rectangle.y0, rectangle.x1,
-        rectangle.y0 + TITLE_LINE_HEIGHT * len(lines),
+        rectangle.y0 + TITLE_LINE_HEIGHT,
     )
     shape = page.new_shape()
     spare = shape.insert_textbox(
-        title_rect, "\n".join(lines), fontsize=TITLE_FONT_SIZE, fontname="hebo",
+        title_rect, text, fontsize=_title_font_size(rectangle, text), fontname="hebo",
         align=align,
     )
     if spare < 0:
         raise InventoryError("No se pudo ajustar el título del PDF.")
     shape.commit()
-    return TITLE_LINE_HEIGHT * len(lines)
+    return TITLE_LINE_HEIGHT
 
 
 def _cell(page, x, y, width, height, text, *, bold=False, size=9):
@@ -288,9 +280,7 @@ def _table(
     first_width, number_width = 265, 30
     unit = (888 - first_width - number_width) / numeric
     # Repeat complete headings and totals across pages without splitting a row.
-    title_height = TITLE_LINE_HEIGHT * len(
-        _title_lines(pymupdf.Rect(36, 110, 924, 500), title.rstrip("."))
-    )
+    title_height = TITLE_LINE_HEIGHT
     title_offset = title_height - TITLE_LINE_HEIGHT
     table_y = 205 + title_offset
     rows_per_page = min(5, (490 - table_y - 60) // 32)
@@ -371,7 +361,12 @@ def generate_pdf(
         "SUMATORIA DE TODOS LOS CENTROS"
         if consolidated and category not in (
             "Equipos médicos especiales", "Todos los vehículos",
-        ) else ""
+        )
+        else (
+            f"CENTRO DE SALUD: {data[0][0]['name']}"
+            if not consolidated
+            else ""
+        )
     )
     title_suffix = (
         "DE TODOS LOS CENTROS DE SALUD" if consolidated

@@ -19,12 +19,8 @@ def pdf_title_spans(page):
         for block in page.get_text("dict")["blocks"]
         for line in block.get("lines", [])
         for span in line["spans"]
-        if 100 <= span["bbox"][1] < 205 and span["size"] >= 15
+        if 100 <= span["bbox"][1] < 138
     ]
-
-
-def pdf_title_sizes(page):
-    return [span["size"] for span in pdf_title_spans(page)]
 
 
 class MilitaryReportLayoutTests(unittest.TestCase):
@@ -101,7 +97,7 @@ class MilitaryReportLayoutTests(unittest.TestCase):
                     expected = " ".join(record[key].split())
                     self.assertEqual(text.count(expected), 16, key)
 
-    def test_military_pdf_titles_keep_one_font_size_and_wrap_long_components(self):
+    def test_military_pdf_titles_fit_one_line_and_shrink_long_components(self):
         record = {
             "component": "Componente de nombre muy extenso " * 7,
             "grade": "TTE", "full_name": "PERSONA DE PRUEBA",
@@ -119,11 +115,15 @@ class MilitaryReportLayoutTests(unittest.TestCase):
             with self.subTest(options=options), pymupdf.open(
                 stream=generate_military_pdf([record], **options), filetype="pdf",
             ) as document:
-                sizes = [
-                    size for page in document for size in pdf_title_sizes(page)
+                titles = [
+                    span for page in document for span in pdf_title_spans(page)
                 ]
-                self.assertTrue(sizes)
-                self.assertEqual(set(sizes), {16.0})
+                self.assertEqual(len(titles), 1)
+                self.assertNotIn("\n", titles[0]["text"])
+                if options:
+                    self.assertEqual(titles[0]["size"], 16.0)
+                else:
+                    self.assertLess(titles[0]["size"], 16.0)
                 self.assertIn(
                     "PERSONA DE PRUEBA", " ".join(document[0].get_text().split()),
                 )
@@ -600,10 +600,7 @@ class ReportTests(unittest.TestCase):
                     for page in doc:
                         title = " ".join(
                             " ".join(span["text"].split())
-                            for block in page.get_text("dict")["blocks"]
-                            for line in block.get("lines", [])
-                            for span in line["spans"]
-                            if span["size"] == 16.0
+                            for span in pdf_title_spans(page)
                         )
                         if category == "Equipos médicos especiales":
                             self.assertEqual(
@@ -629,7 +626,7 @@ class ReportTests(unittest.TestCase):
                 " ".join(doc[0].get_text().split()),
             )
 
-    def test_inventory_pdf_titles_use_one_font_size_in_every_report(self):
+    def test_inventory_pdf_titles_fit_one_line_in_every_report(self):
         self.populate(self.north)
         for center_id in (self.north, None):
             for category in (None, *SUMMARY_CATEGORIES, "Todos los vehículos"):
@@ -639,11 +636,35 @@ class ReportTests(unittest.TestCase):
                     ),
                     filetype="pdf",
                 ) as document:
-                    sizes = [
-                        size for page in document for size in pdf_title_sizes(page)
+                    titles = [
+                        span for page in document for span in pdf_title_spans(page)
                     ]
-                    self.assertTrue(sizes)
-                    self.assertEqual(set(sizes), {16.0})
+                    self.assertTrue(titles)
+                    self.assertTrue(all(6 <= span["size"] <= 16 for span in titles))
+                    self.assertTrue(all("\n" not in span["text"] for span in titles))
+
+    def test_long_center_title_shrinks_to_fit_one_line(self):
+        center_name = ("Centro de salud con una denominación muy extensa " * 3).strip()
+        self.store.create_center(
+            self.token, center_name, "Largo", "centro-largo", PASSWORD,
+        )
+        center_id = next(
+            center["id"] for center in self.store.centers(self.token)
+            if center["assigned_username"] == "centro-largo"
+        )
+        with pymupdf.open(
+            stream=generate_pdf(
+                self.store, self.token, center_id, category="Vehículos",
+            ),
+            filetype="pdf",
+        ) as document:
+            titles = pdf_title_spans(document[0])
+            self.assertEqual(len(titles), 1)
+            self.assertEqual(
+                " ".join(titles[0]["text"].split()),
+                f"VEHÍCULOS PROTOCOLARES DEL {center_name.upper()}",
+            )
+            self.assertLess(titles[0]["size"], 16.0)
 
     def test_vehicle_pdf_titles_are_centered(self):
         self.populate(self.north)

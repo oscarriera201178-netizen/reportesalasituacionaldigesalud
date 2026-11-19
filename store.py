@@ -36,8 +36,11 @@ VEHICLE_GROUPS = {
 THEATRE_TYPES = ("En pisos", "En emergencias")
 SPECIAL_EQUIPMENT_TYPES = (
     "Máquina de anestesia", "Tomógrafo", "Resonador", "Radiología",
-    "Ecógrafo", "Arco en C", "Silla odontológica", "Silla para diálisis",
+    "Ecógrafo", "Arco en C", "Silla odontológica", "Máquina para Hemodiálisis",
 )
+LEGACY_SPECIAL_EQUIPMENT_TYPES = {
+    "Silla para diálisis": "Máquina para Hemodiálisis",
+}
 REPORT_SECTIONS = (
     "Camas", "Vehículos", "Banco de sangre", "Laboratorio", "Quirófano",
     "Equipos médicos especiales", "Plantas eléctricas",
@@ -470,6 +473,46 @@ class Store:
                 INSERT OR IGNORE INTO equipment_types(kind)
                 SELECT DISTINCT TRIM(kind) FROM equipment WHERE TRIM(kind) != ''
             """)
+            for old_kind, new_kind in LEGACY_SPECIAL_EQUIPMENT_TYPES.items():
+                connection.execute(
+                    "UPDATE equipment SET kind=? WHERE kind=?",
+                    (new_kind, old_kind),
+                )
+                legacy_counts = connection.execute(
+                    "SELECT id, center_id, category, operational, unavailable "
+                    "FROM equipment_counts WHERE kind=?",
+                    (old_kind,),
+                ).fetchall()
+                for legacy in legacy_counts:
+                    current = connection.execute(
+                        "SELECT id FROM equipment_counts "
+                        "WHERE center_id=? AND category=? AND kind=?",
+                        (legacy["center_id"], legacy["category"], new_kind),
+                    ).fetchone()
+                    if current:
+                        connection.execute(
+                            "UPDATE equipment_counts SET operational=operational+?, "
+                            "unavailable=unavailable+? WHERE id=?",
+                            (legacy["operational"], legacy["unavailable"], current["id"]),
+                        )
+                        connection.execute(
+                            "DELETE FROM equipment_counts WHERE id=?",
+                            (legacy["id"],),
+                        )
+                    else:
+                        connection.execute(
+                            "UPDATE equipment_counts SET kind=? WHERE id=?",
+                            (new_kind, legacy["id"]),
+                        )
+                connection.execute(
+                    "DELETE FROM equipment_types WHERE kind=? "
+                    "AND EXISTS (SELECT 1 FROM equipment_types WHERE kind=?)",
+                    (old_kind, new_kind),
+                )
+                connection.execute(
+                    "UPDATE equipment_types SET kind=? WHERE kind=?",
+                    (new_kind, old_kind),
+                )
             connection.execute("""
                 INSERT OR IGNORE INTO plant_counts(center_id, category, kind, operational, unavailable)
                 SELECT center_id, 'Plantas eléctricas', kind, operational, unavailable

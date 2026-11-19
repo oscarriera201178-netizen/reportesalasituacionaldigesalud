@@ -683,6 +683,58 @@ class StoreTests(unittest.TestCase):
             "Fuera de servicio",
         )
 
+    def test_legacy_hemodialysis_name_migrates_without_losing_counts_or_assets(self):
+        from store import SPECIAL_EQUIPMENT_TYPES
+
+        old_kind = "Silla para diálisis"
+        new_kind = "Máquina para Hemodiálisis"
+        self.assertIn(new_kind, SPECIAL_EQUIPMENT_TYPES)
+        self.assertNotIn(old_kind, SPECIAL_EQUIPMENT_TYPES)
+        with self.store.transaction() as connection:
+            connection.execute(
+                "INSERT INTO equipment_counts(center_id, category, kind, operational, unavailable) "
+                "VALUES(?, ?, ?, ?, ?)",
+                (self.north, "Equipos médicos especiales", old_kind, 5, 2),
+            )
+            connection.execute(
+                "INSERT INTO equipment_counts(center_id, category, kind, operational, unavailable) "
+                "VALUES(?, ?, ?, ?, ?)",
+                (self.north, "Equipos médicos especiales", new_kind, 3, 1),
+            )
+            connection.execute("INSERT INTO equipment_types(kind) VALUES(?)", (old_kind,))
+            connection.execute("INSERT INTO equipment_types(kind) VALUES(?)", (new_kind,))
+            connection.execute(
+                "INSERT INTO equipment(center_id, code, kind, brand, model, serial, state) "
+                "VALUES(?, ?, ?, ?, ?, ?, ?)",
+                (self.north, "DIAL-1", old_kind, "Marca", "Modelo", "Serie", "Operativo"),
+            )
+            connection.execute(
+                "INSERT INTO section_loads(center_id, section, period_start, loaded) "
+                "VALUES(?, ?, ?, ?)",
+                (
+                    self.north, "Equipos médicos especiales",
+                    weekly_status(0, self.clock.return_value)["period_start"], 1,
+                ),
+            )
+
+        reopened = Store(self.store.path)
+        inventory = reopened.inventory(self.center, self.north)
+        migrated_counts = [
+            row for row in inventory["equipment_counts"] if row["kind"] == new_kind
+        ]
+        self.assertEqual(len(migrated_counts), 1)
+        self.assertEqual(
+            (migrated_counts[0]["operational"], migrated_counts[0]["unavailable"]),
+            (8, 3),
+        )
+        self.assertEqual(inventory["equipment"][0]["kind"], new_kind)
+        types = reopened.equipment_types(self.center)
+        self.assertIn(new_kind, types)
+        self.assertNotIn(old_kind, types)
+        self.assertTrue(
+            reopened.section_loads(self.center, self.north)["Equipos médicos especiales"],
+        )
+
     def test_legacy_facilities_migrate_to_counts_without_losing_details(self):
         self.store.save_facility(
             self.center, self.north, "Banco de sangre", "Banco central", "General", "Operativo",
