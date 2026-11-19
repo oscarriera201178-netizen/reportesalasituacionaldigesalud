@@ -450,14 +450,14 @@ def generate_pdf(
                     rows.append(("", "TOTAL GENERAL", totals, True))
                     _table(
                         doc, title, (f"{equipment_kind.upper()}\nSITUACIÓN",), rows,
-                        subtitle, timestamp, omit_empty=omit_empty,
+                        subtitle, timestamp, omit_empty=omit_empty, title_align=1,
                     )
                     rendered = True
                 if not rendered:
                     empty_heading = f"{kind.upper()}\nSITUACIÓN" if kind else "SITUACIÓN"
                     _table(
                         doc, title, (empty_heading,), [("", "TOTAL GENERAL", [0, 0], True)],
-                        subtitle, timestamp, omit_empty=omit_empty,
+                        subtitle, timestamp, omit_empty=omit_empty, title_align=1,
                     )
                 continue
             rows = []
@@ -498,7 +498,7 @@ def generate_pdf(
             )
             _table(
                 doc, report_title, groups, rows, subtitle, timestamp,
-                omit_empty=omit_empty, title_align=1 if section == 2 else 0,
+                omit_empty=omit_empty, title_align=1 if section in (2, 5) else 0,
             )
             if section == 4 and only != "Banco de sangre" and (
                 kind in (None, "Laboratorios especiales") or kind.startswith("Laboratorio especial: ")

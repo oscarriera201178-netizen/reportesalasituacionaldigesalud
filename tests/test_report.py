@@ -377,6 +377,12 @@ class ReportTests(unittest.TestCase):
             page = document[0]
             text = " ".join(page.get_text().split())
             self.assertIn("EQUIPOS MÉDICOS ESPECIALES DEL CENTRO NORTE", text)
+            title = next(
+                span for span in pdf_title_spans(page)
+                if "EQUIPOS MÉDICOS ESPECIALES" in span["text"]
+            )
+            center = (title["bbox"][0] + title["bbox"][2]) / 2
+            self.assertAlmostEqual(center, 480, delta=1)
             descriptions = {
                 word[4] for word in page.get_text("words")
                 if word[0] < 331 and word[1] > 260
