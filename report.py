@@ -369,7 +369,9 @@ def generate_pdf(
         raise InventoryError("No hay centros registrados para generar el informe.")
     subtitle = (
         "SUMATORIA DE TODOS LOS CENTROS"
-        if consolidated and category != "Equipos médicos especiales" else ""
+        if consolidated and category not in (
+            "Equipos médicos especiales", "Todos los vehículos",
+        ) else ""
     )
     title_suffix = (
         "DE TODOS LOS CENTROS DE SALUD" if consolidated
@@ -378,6 +380,10 @@ def generate_pdf(
     timestamp = datetime.now(REPORT_TIMEZONE).strftime("Generado: %d/%m/%Y %H:%M (hora de Venezuela)")
     with pymupdf.open() as doc:
         if category == "Todos los vehículos":
+            vehicle_title_suffix = (
+                f"{title_suffix} DE LA RED SANITARIA MILITAR"
+                if consolidated else title_suffix
+            )
             for label, groups in VEHICLE_GROUPS.items():
                 if vehicle_group not in (None, label) or (kind is not None and kind not in groups):
                     continue
@@ -394,7 +400,7 @@ def generate_pdf(
                 if consolidated:
                     rows.append(("", "TOTAL GENERAL", totals, True))
                 _table(
-                    doc, f"{title} {title_suffix}", groups, rows, subtitle, timestamp,
+                    doc, f"{title} {vehicle_title_suffix}", groups, rows, subtitle, timestamp,
                     omit_empty=omit_empty, title_align=1,
                 )
             return doc.tobytes(garbage=4, deflate=True)

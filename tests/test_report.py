@@ -537,6 +537,33 @@ class ReportTests(unittest.TestCase):
                 self.assertEqual(tuple(numbers), expected)
                 self.assertNotIn("CAMAS HOSPITALARIAS", page.get_text())
 
+    def test_consolidated_vehicle_titles_use_network_suffix_without_sum_subtitle(self):
+        expected_titles = {
+            None: (
+                "AMBULANCIAS", "VEHÍCULOS PROTOCOLARES",
+                "CARGA PESADA (CAMIONES Y GANDOLAS)",
+                "TRANSPORTE DE PERSONAL (AUTOBÚS, VAN Y MINIVAN)", "MOTOS",
+            ),
+            "Ambulancias": ("AMBULANCIAS",),
+            "Motos": ("MOTOS",),
+        }
+        suffix = "DE TODOS LOS CENTROS DE SALUD DE LA RED SANITARIA MILITAR"
+        for vehicle_group, titles in expected_titles.items():
+            with self.subTest(vehicle_group=vehicle_group), pymupdf.open(
+                stream=generate_pdf(
+                    self.store, self.token, category="Todos los vehículos",
+                    vehicle_group=vehicle_group,
+                ),
+                filetype="pdf",
+            ) as document:
+                self.assertEqual(len(document), len(titles))
+                text = " ".join(
+                    " ".join(page.get_text().split()) for page in document
+                )
+                self.assertNotIn("SUMATORIA DE TODOS LOS CENTROS", text)
+                for title in titles:
+                    self.assertIn(f"{title} {suffix}", text)
+
     def test_institutional_banner_appears_above_content_in_every_export(self):
         self.populate(self.north)
         for center_id in (self.north, None):
