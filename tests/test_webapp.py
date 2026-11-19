@@ -1344,6 +1344,97 @@ class HtmlApplicationTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 400)
 
+    def test_staffing_is_available_to_admin_and_guardia1_only(self):
+        from store import STAFFING_TABLES
+
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = self.admin_token
+        page = self.client.get("/staffing")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"PARTE DEL PERSONAL", page.data)
+        self.assertIn(b"Centro Norte", page.data)
+        csrf = re.search(rb'name="csrf_token" value="([^"]+)"', page.data).group(1).decode()
+        response = self.client.post("/staffing", data={
+            "csrf_token": csrf, "action": "save_professions",
+            "center": str(self.center["id"]), "professions": "Odontología\nPsicología",
+        })
+        self.assertEqual(response.status_code, 302)
+
+        fields = {
+            "csrf_token": csrf, "action": "save_counts",
+        }
+        for table in STAFFING_TABLES:
+            rows = list(table["rows"])
+            if table["key"] == "professions":
+                rows.extend(("Odontología", "Psicología"))
+            for row_index, _row_label in enumerate(rows):
+                for column_index, _column in enumerate(table["columns"]):
+                    fields[f"count_{table['key']}_{row_index}_{column_index}"] = (
+                        "5" if (table["key"], row_index, column_index) == ("professions", 4, 0) else "0"
+                    )
+        response = self.client.post(
+            f"/staffing?center={self.center['id']}", data=fields,
+        )
+        self.assertEqual(response.status_code, 302)
+        page = self.client.get(f"/staffing?center={self.center['id']}")
+        self.assertIn(b"Odontolog\xc3\xada", page.data)
+        self.assertIn(b'value="5"', page.data)
+
+        self.store.create_military_account(
+            self.admin_token, "Guardia Nacional Bolivariana", "guardia1", CENTER_PASSWORD,
+        )
+        self.store.create_military_account(
+            self.admin_token, "Ejército Bolivariano", "guardia2", CENTER_PASSWORD,
+        )
+        guardia_token = self.store.login("guardia1", CENTER_PASSWORD)
+        guardia_center_id = self.store.identity(guardia_token)["center_id"]
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = guardia_token
+        menu = self.client.get("/military/records")
+        self.assertIn(b'href="/staffing">PARTE DEL PERSONAL</a>', menu.data)
+        page = self.client.get("/staffing")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Guardia Nacional Bolivariana", page.data)
+        self.assertNotIn(b'name="professions"', page.data)
+        self.assertNotIn(b"Consolidado de todos los centros", page.data)
+        csrf = re.search(rb'name="csrf_token" value="([^"]+)"', page.data).group(1).decode()
+        guardia_fields = {"csrf_token": csrf, "action": "save_counts"}
+        for table in STAFFING_TABLES:
+            rows = list(table["rows"])
+            if table["key"] == "professions":
+                rows.extend(("Odontología", "Psicología"))
+            for row_index, _row_label in enumerate(rows):
+                for column_index, _column in enumerate(table["columns"]):
+                    guardia_fields[f"count_{table['key']}_{row_index}_{column_index}"] = (
+                        "8" if (table["key"], row_index, column_index) == ("components", 0, 3) else "0"
+                    )
+        response = self.client.post(
+            f"/staffing?center={guardia_center_id}", data=guardia_fields,
+        )
+        self.assertEqual(response.status_code, 302)
+        admin_snapshot = self.store.staffing_snapshot(self.admin_token)
+        self.assertEqual(
+            admin_snapshot["counts"][guardia_center_id][
+                ("components", "OFICIALES GENERALES", "GNB")
+            ],
+            8,
+        )
+
+        guardia2_token = self.store.login("guardia2", CENTER_PASSWORD)
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = guardia2_token
+        menu = self.client.get("/military/records")
+        self.assertNotIn(b'href="/staffing"', menu.data)
+        self.assertEqual(self.client.get("/staffing").status_code, 403)
+
+        center_token = self.store.login("norte", CENTER_PASSWORD)
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = center_token
+        inventory = self.client.get(f"/inventory/{self.center['id']}")
+        self.assertEqual(inventory.status_code, 200)
+        self.assertNotIn(b'href="/staffing"', inventory.data)
+        self.assertEqual(self.client.get("/staffing").status_code, 403)
+
     def test_vercel_bootstrap_creates_admin_and_imports_catalog_once(self):
         blank_store = Store(Path(self.directory.name) / "blank.sqlite3")
         with patch.dict(os.environ, {

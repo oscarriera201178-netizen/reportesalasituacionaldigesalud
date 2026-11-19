@@ -1,0 +1,115 @@
+{% extends "base.html" %}
+{% block title %}PARTE DEL PERSONAL · DIGESALUD-MPPD{% endblock %}
+{% macro staffing_table(table, editable, consolidated=false) %}
+  <div class="table-wrap">
+    <table class="staffing-table">
+      <caption>{{ table.title }}{% if consolidated %} · Todos los centros{% elif center %} · {{ center.name }}{% endif %}</caption>
+      <thead>
+        <tr>
+          <th>NRO</th>
+          <th>{{ table.row_heading }}</th>
+          <th>TOTAL</th>
+          {% for column_key, column_label in table.columns %}<th>{{ column_label }}</th>{% endfor %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in table.rows %}
+          <tr>
+            <td>{{ "%02d"|format(loop.index) }}</td>
+            <td>{{ row.label }}</td>
+            <td>{{ row.total }}</td>
+            {% for amount in row.amounts %}
+              <td>
+                {% if editable %}
+                  <input aria-label="{{ row.label }} - {{ table.columns[loop.index0][1] }}" type="number" min="0" max="999999" step="1" name="count_{{ table.key }}_{{ row.index }}_{{ loop.index0 }}" value="{{ amount }}" required>
+                {% else %}{{ amount }}{% endif %}
+              </td>
+            {% endfor %}
+          </tr>
+        {% endfor %}
+        <tr class="total-row">
+          <th colspan="2">TOTAL</th>
+          <th>{{ table.total }}</th>
+          {% for amount in table.column_totals %}<th>{{ amount }}</th>{% endfor %}
+        </tr>
+      </tbody>
+    </table>
+  </div>
+{% endmacro %}
+{% block content %}
+{% if is_admin %}
+<div class="admin-nav">
+  <a class="button button-muted" href="{{ url_for('home') }}">Informes</a>
+  <a class="button button-muted" href="{{ url_for('accounts') }}">Cuentas de centros</a>
+  <a class="button button-muted" href="{{ url_for('military_records_menu') }}">Registros de Militares</a>
+</div>
+{% else %}
+<a class="button button-muted" href="{{ url_for('component_records_menu') }}">Regresar</a>
+{% endif %}
+<section class="panel">
+  <h1>PARTE DEL PERSONAL</h1>
+  {% if is_admin %}
+    <p>Administración configura profesiones, revisa y consolida los cuadros. El formulario de captura está disponible solo en la cuenta guardia1.</p>
+  {% else %}
+    <p>Completa los cuadros correspondientes a {{ center.name }}.</p>
+  {% endif %}
+  {% if is_admin %}
+  <form method="get" class="filter-grid">
+    <label>Centro de salud
+      <select name="center" onchange="this.form.submit()" {% if not centers %}disabled{% endif %}>
+        {% for item in centers %}
+          <option value="{{ item.id }}" {% if center and center.id == item.id %}selected{% endif %}>{{ item.id }}. {{ item.name }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  {% endif %}
+</section>
+{% if is_admin %}
+<section class="panel">
+  <h2>Profesiones adicionales</h2>
+  <p>Agrega una profesión por línea. Se incorporará como fila en el cuadro de profesiones militares. Si quitas una profesión, también se borran sus cantidades guardadas.</p>
+  <form method="post" class="form-stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="save_professions">
+    <input type="hidden" name="center" value="{{ center.id if center else '' }}">
+    <label>Profesiones
+      <textarea name="professions" rows="6" maxlength="10200" placeholder="Ejemplo: Bioanalista&#10;Odontólogo&#10;Psicólogo">{{ profession_text }}</textarea>
+    </label>
+    <button class="button button-primary" type="submit">Guardar profesiones</button>
+  </form>
+</section>
+{% endif %}
+{% if center %}
+  <form method="post" action="{{ url_for('staffing', center=center.id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="save_counts">
+    <section class="panel">
+      <h2>Cuadros para {{ center.name }}</h2>
+      <p>Los totales se calculan automáticamente a partir de las cantidades por columna.</p>
+      {% for table in tables %}
+        <article class="staffing-card">
+          <h3>{{ table.heading }} DEL {{ center.name }}</h3>
+          {{ staffing_table(table, true) }}
+        </article>
+      {% endfor %}
+      <button class="button button-primary" type="submit">Guardar cuadros</button>
+    </section>
+  </form>
+{% elif is_admin %}
+  <section class="panel"><p>Registra un centro de salud para comenzar a preparar estos cuadros.</p></section>
+{% endif %}
+{% if is_admin %}
+<section class="panel">
+  <h2>Consolidado de todos los centros de salud</h2>
+  {% if centers %}
+    {% for table in consolidated_tables %}
+      <article class="staffing-card">
+        <h3>{{ table.heading }} DEL CONSOLIDADO DE CENTROS DE SALUD</h3>
+        {{ staffing_table(table, false, true) }}
+      </article>
+    {% endfor %}
+  {% else %}<p>No hay centros de salud registrados.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}

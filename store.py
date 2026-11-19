@@ -95,6 +95,85 @@ TRAFFIC_CONDITIONS = (
 )
 TRAFFIC_ROLES = ("Conductor", "Pasajero", "Peatón")
 FACILITY_CATEGORIES = ("Banco de sangre", "Laboratorio", "Quirófano")
+STAFFING_TABLES = (
+    {
+        "key": "components",
+        "title": "PERSONAL MILITAR - COMPONENTES",
+        "heading": "PARTE DEL PERSONAL MILITAR",
+        "row_heading": "PERSONAL MILITAR",
+        "rows": (
+            "OFICIALES GENERALES", "OFICIALES SUPERIORES",
+            "OFICIALES SUBALTERNOS", "TROPAS PROFESIONALES",
+        ),
+        "columns": (("EJB", "EJB"), ("ARB", "ARB"), ("AMB", "AMB"), ("GNB", "GNB")),
+    },
+    {
+        "key": "officer_categories",
+        "title": "PERSONAL MILITAR - CATEGORÍA DE OFICIALES",
+        "heading": "PARTE DEL PERSONAL MILITAR",
+        "row_heading": "PERSONAL MILITAR",
+        "rows": ("OFICIALES GENERALES", "OFICIALES SUPERIORES", "OFICIALES SUBALTERNOS"),
+        "columns": (
+            ("command", "COMANDO"), ("technicians", "TÉCNICOS"),
+            ("assimilated", "ASIMILADOS"), ("assimilated_technicians", "ASIMILADOS TÉCNICOS"),
+            ("troops", "TROPAS"),
+        ),
+    },
+    {
+        "key": "absences",
+        "title": "PERSONAL MILITAR - AUSENCIAS",
+        "heading": "PARTE DEL PERSONAL MILITAR",
+        "row_heading": "PERSONAL MILITAR",
+        "rows": (
+            "OFICIALES GENERALES", "OFICIALES SUPERIORES",
+            "OFICIALES SUBALTERNOS", "TROPAS PROFESIONALES",
+        ),
+        "columns": (
+            ("pdl", "PDL"), ("pdsc", "PDSC"), ("rest", "REPOSO LD"),
+            ("hospitalized", "HOSPITALIZADOS"),
+        ),
+    },
+    {
+        "key": "professions",
+        "title": "PERSONAL MILITAR - PROFESIONES",
+        "heading": "PARTE DEL PERSONAL MILITAR",
+        "row_heading": "PROFESIONES",
+        "rows": (
+            "ADMINISTRATIVOS", "MÉDICOS", "ENFERMERIA",
+            "BIOANALISTAS, RADIOLOGOS, PSICOLOGOS, ETC…",
+        ),
+        "columns": (
+            ("generals", "OFICIALES GENERALES"),
+            ("superiors", "OFICIALES SUPERIORES"),
+            ("subalterns", "OFICIALES SUBALTERNOS"),
+            ("troops", "TROPAS PROFESIONALES"),
+        ),
+    },
+    {
+        "key": "specialties",
+        "title": "PERSONAL MILITAR - MÉDICOS ESPECIALISTAS",
+        "heading": "PARTE DEL PERSONAL MILITAR",
+        "row_heading": "ESPECIALIDADES",
+        "rows": ("CARDIOLOGIA", "TRAUMATOLOGIA", "GINECOLOGIA", "CIRUGIA GENERAL"),
+        "columns": (
+            ("generals", "OFICIALES GENERALES"),
+            ("superiors", "OFICIALES SUPERIORES"),
+            ("subalterns", "OFICIALES SUBALTERNOS"),
+            ("troops", "TROPAS PROFESIONALES"),
+        ),
+    },
+    {
+        "key": "civilian",
+        "title": "PERSONAL NO MILITAR",
+        "heading": "PARTE DEL PERSONAL NO MILITAR",
+        "row_heading": "PERSONAL",
+        "rows": ("PERSONAL NO MILITAR", "CHAMBA JUVENIL"),
+        "columns": (
+            ("doctors", "MÉDICOS"), ("employees", "EMPLEADOS"),
+            ("workers", "OBREROS"), ("contracted", "CONTRATADOS"),
+        ),
+    },
+)
 INVENTORY_QUANTITIES = {
     "Camas": BED_TYPES,
     "Ambulancias": AMBULANCE_TYPES,
@@ -451,6 +530,18 @@ class Store:
                     created_at REAL NOT NULL,
                     attention_center TEXT NOT NULL DEFAULT ''
                 );
+                CREATE TABLE IF NOT EXISTS staffing_professions (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL COLLATE NOCASE UNIQUE
+                );
+                CREATE TABLE IF NOT EXISTS staffing_counts (
+                    center_id INTEGER NOT NULL REFERENCES centers(id),
+                    quadro TEXT NOT NULL,
+                    row_label TEXT NOT NULL,
+                    column_key TEXT NOT NULL,
+                    amount INTEGER NOT NULL CHECK(amount >= 0),
+                    PRIMARY KEY(center_id, quadro, row_label, column_key)
+                );
             """)
             if "attention_center" not in connection.table_columns("traffic_records"):
                 connection.execute(
@@ -760,6 +851,130 @@ class Store:
                 ).fetchall()
             return [dict(row) for row in rows]
 
+    def staffing_snapshot(self, token: str) -> dict:
+        with self.transaction() as connection:
+            user = self._actor(connection, token)
+            if user["role"] == "admin":
+                centers = [
+                    dict(row) for row in connection.execute(
+                        "SELECT c.id,c.name FROM centers c WHERE c.account_type='health' "
+                        "OR EXISTS (SELECT 1 FROM users u WHERE u.center_id=c.id "
+                        "AND u.role='center' AND u.username='guardia1') ORDER BY c.id",
+                    ).fetchall()
+                ]
+            elif user["role"] == "center" and user["username"] == "guardia1":
+                centers = [
+                    dict(row) for row in connection.execute(
+                        "SELECT id,name FROM centers WHERE id=?", (user["center_id"],),
+                    ).fetchall()
+                ]
+            else:
+                raise AccessError("Esta operación solo está disponible para administración y guardia1.")
+            visible_center_ids = {center["id"] for center in centers}
+            professions = [
+                row["name"] for row in connection.execute(
+                    "SELECT name FROM staffing_professions ORDER BY name COLLATE NOCASE",
+                ).fetchall()
+            ]
+            counts = {}
+            for row in connection.execute(
+                "SELECT s.center_id,s.quadro,s.row_label,s.column_key,s.amount "
+                "FROM staffing_counts s JOIN centers c ON c.id=s.center_id",
+            ):
+                if row["center_id"] not in visible_center_ids:
+                    continue
+                counts.setdefault(row["center_id"], {})[
+                    (row["quadro"], row["row_label"], row["column_key"])
+                ] = row["amount"]
+            return {"centers": centers, "professions": professions, "counts": counts}
+
+    def save_staffing_professions(self, token: str, professions) -> None:
+        if not isinstance(professions, (list, tuple)) or len(professions) > 100:
+            raise InventoryError("Ingresa hasta 100 profesiones, una por línea.")
+        cleaned = []
+        seen = set()
+        fixed_rows = {
+            label.casefold()
+            for table in STAFFING_TABLES for label in table["rows"]
+        }
+        for profession in professions:
+            if not isinstance(profession, str):
+                raise InventoryError("Cada profesión debe ser texto.")
+            name = profession.strip()
+            if not name:
+                continue
+            if len(name) > 100:
+                raise InventoryError("Cada profesión admite hasta 100 caracteres.")
+            normalized = name.casefold()
+            if normalized in seen or normalized in fixed_rows:
+                raise InventoryError(f"La profesión «{name}» está repetida.")
+            seen.add(normalized)
+            cleaned.append(name)
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            existing = {
+                row["name"] for row in connection.execute(
+                    "SELECT name FROM staffing_professions",
+                ).fetchall()
+            }
+            connection.execute("DELETE FROM staffing_professions")
+            connection.executemany(
+                "INSERT INTO staffing_professions(name) VALUES(?)",
+                [(name,) for name in cleaned],
+            )
+            removed = existing - set(cleaned)
+            if removed:
+                connection.executemany(
+                    "DELETE FROM staffing_counts WHERE quadro='professions' AND row_label=?",
+                    [(name,) for name in removed],
+                )
+
+    def save_staffing_counts(self, token: str, center_id: int, values: dict) -> None:
+        with self.transaction() as connection:
+            user = self._actor(connection, token)
+            if user["role"] != "admin" and (
+                user["role"] != "center" or user["username"] != "guardia1"
+                or user["center_id"] != center_id
+            ):
+                raise AccessError("Esta operación solo está disponible para administración y guardia1.")
+            if not connection.execute(
+                "SELECT 1 FROM centers c WHERE c.id=? AND (c.account_type='health' "
+                "OR EXISTS (SELECT 1 FROM users u WHERE u.center_id=c.id "
+                "AND u.role='center' AND u.username='guardia1'))",
+                (center_id,),
+            ).fetchone():
+                raise InventoryError("El centro de salud seleccionado no existe.")
+            professions = {
+                row["name"] for row in connection.execute(
+                    "SELECT name FROM staffing_professions",
+                ).fetchall()
+            }
+            rows_by_table = {
+                table["key"]: (*table["rows"], *professions)
+                if table["key"] == "professions" else table["rows"]
+                for table in STAFFING_TABLES
+            }
+            expected = {
+                (table["key"], row_label, column_key)
+                for table in STAFFING_TABLES
+                for row_label in rows_by_table[table["key"]]
+                for column_key, _label in table["columns"]
+            }
+            if not isinstance(values, dict) or set(values) != expected:
+                raise InventoryError("Los cuadros del personal están incompletos o no son válidos.")
+            for amount in values.values():
+                if type(amount) is not int or not 0 <= amount <= 999999:
+                    raise InventoryError("Cada cantidad debe ser un número entero entre 0 y 999999.")
+            connection.execute("DELETE FROM staffing_counts WHERE center_id=?", (center_id,))
+            connection.executemany(
+                "INSERT INTO staffing_counts(center_id,quadro,row_label,column_key,amount) "
+                "VALUES(?,?,?,?,?)",
+                [
+                    (center_id, quadro, row_label, column_key, amount)
+                    for (quadro, row_label, column_key), amount in values.items()
+                ],
+            )
+
     def create_center(self, token: str, name: str, location: str, username: str, password: str) -> None:
         name = _text(name, "Nombre del centro")
         location = _text(location, "Ubicación", required=False)
@@ -866,7 +1081,9 @@ class Store:
                 "DELETE FROM migrated_facilities WHERE facility_id IN "
                 "(SELECT id FROM facilities WHERE center_id=?)", (center_id,),
             )
-            for table in (*INVENTORY_TABLES, "military_records", "traffic_records"):
+            for table in (
+                *INVENTORY_TABLES, "military_records", "traffic_records", "staffing_counts",
+            ):
                 connection.execute(f"DELETE FROM {table} WHERE center_id=?", (center_id,))
             connection.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
             connection.execute("DELETE FROM users WHERE id=?", (user_id,))

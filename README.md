@@ -284,8 +284,8 @@ sal aleatoria. No escribas credenciales en el chat ni en el repositorio.
 
 Inicia la interfaz HTML con `python webapp.py` y abre el puerto **8503** en la
 vista previa del editor. Se usa un puerto diferente del portal de Residencias.
-El administrador dispone de enlaces de navegación a **Informes** y
-**Cuentas de centros**. Esta última sección permite
+El administrador dispone de enlaces de navegación a **Informes**,
+**Cuentas de centros** y **PARTE DEL PERSONAL**. La gestión de **Cuentas de centros** permite
 crear un centro nuevo con su usuario y contraseña, o crear solo la
 cuenta de un centro ya registrado en el catálogo seleccionándolo de la lista,
 sin volver a escribir su nombre ni su ubicación. El administrador asigna el
@@ -299,6 +299,13 @@ credenciales por un canal privado, nunca en GitHub. Todos usan el mismo enlace:
 el administrador consulta informes y cada centro accede solo a su inventario.
 Para entrar como centro, cierra la sesión administradora e inicia sesión con la
 cuenta del centro (o utiliza otro navegador).
+
+La administración también dispone del área **PARTE DEL PERSONAL**. En esta
+primera fase, el administrador configura profesiones adicionales, puede revisar
+y editar los seis cuadros por centro y consulta sus totales consolidados. La
+captura se muestra temporalmente solo a la cuenta `guardia1`; las demás cuentas
+de centros no tienen enlace ni acceso. Los cuadros conservan sus filas y
+columnas modelo y muestran el nombre del centro correspondiente.
 
 En **Cuentas de centros**, el administrador puede crear una cuenta para cada
 institución militar. Estas cuentas disponen únicamente del formulario de
