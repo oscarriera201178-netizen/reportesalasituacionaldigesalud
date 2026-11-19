@@ -300,15 +300,12 @@ el administrador consulta informes y cada centro accede solo a su inventario.
 Para entrar como centro, cierra la sesión administradora e inicia sesión con la
 cuenta del centro (o utiliza otro navegador).
 
-La administración también dispone del área **PARTE DEL PERSONAL**. El
-administrador configura las profesiones y especialidades médicas disponibles,
-puede agregar filas por centro, revisar y editar los seis cuadros, y consultar
-sus totales consolidados. Las cuentas `guardia1` y `centro33` pueden abrir el
-formulario desde su menú, elegir en
-desplegables qué profesiones y especialidades agregar y completar sus
-cantidades; las demás cuentas no tienen acceso. En **Personal Militar -
-Ausencias** se explican las siglas PDL y PDSC. El total de cada cuadro aparece
-en la última columna.
+La administración también dispone del área **PARTE DEL PERSONAL**. En esta
+primera fase, el administrador configura profesiones adicionales, puede revisar
+y editar los seis cuadros por centro y consulta sus totales consolidados. La
+captura se muestra temporalmente solo a la cuenta `guardia1`; las demás cuentas
+de centros no tienen enlace ni acceso. Los cuadros conservan sus filas y
+columnas modelo y muestran el nombre del centro correspondiente.
 
 En **Cuentas de centros**, el administrador puede crear una cuenta para cada
 institución militar. Estas cuentas disponen únicamente del formulario de
