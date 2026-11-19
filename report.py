@@ -191,7 +191,33 @@ def _cell(page, x, y, width, height, text, *, bold=False, size=9):
     _text(page, pymupdf.Rect(x + 3, y + 5, x + width - 3, y + height - 2), text, size, bold)
 
 
-def _table(doc, title, groups, rows, signature, subtitle, timestamp, *, omit_empty=False):
+def _header_cell(page, x, y, width, height, text):
+    if "\n" not in text:
+        _cell(page, x, y, width, height, text, bold=True, size=8)
+        return
+    title, subtitle = text.split("\n", 1)
+    rect = pymupdf.Rect(x, y, x + width, y + height)
+    divider_y = y + height / 2
+    page.draw_rect(rect, color=(0.2, 0.25, 0.28), width=0.5)
+    page.draw_line((x, divider_y), (x + width, divider_y), color=(0.2, 0.25, 0.28), width=0.5)
+    font = pymupdf.Font("hebo")
+    for label, baseline in ((title, y + 11), (subtitle, y + 26)):
+        text_width = font.text_length(label, fontsize=9)
+        if text_width <= width - 6:
+            page.insert_text(
+                (x + (width - text_width) / 2, baseline),
+                label, fontsize=9, fontname="hebo",
+            )
+        else:
+            text_rect = (
+                pymupdf.Rect(x + 3, y + 1, x + width - 3, divider_y - 1)
+                if label == title
+                else pymupdf.Rect(x + 3, divider_y + 1, x + width - 3, y + height - 1)
+            )
+            _text(page, text_rect, label, 9, True)
+
+
+def _table(doc, title, groups, rows, subtitle, timestamp, *, omit_empty=False):
     if len(groups) > 6:
         for start in range(0, len(groups), 6):
             part_rows = [
@@ -199,7 +225,7 @@ def _table(doc, title, groups, rows, signature, subtitle, timestamp, *, omit_emp
                 for number, label, values, total in rows
             ]
             _table(
-                doc, title, groups[start:start + 6], part_rows, signature,
+                doc, title, groups[start:start + 6], part_rows,
                 f"{subtitle} | Total correspondiente a los tipos de este cuadro" if subtitle else "", timestamp,
                 omit_empty=omit_empty,
             )
@@ -238,7 +264,10 @@ def _table(doc, title, groups, rows, signature, subtitle, timestamp, *, omit_emp
         _cell(page, 66, y, first_width, 60, "CENTRO / DESCRIPCIÓN", bold=True)
         x = 66 + first_width
         for group in groups:
-            _cell(page, x, y, unit * 2, 30, group.removeprefix("Laboratorio especial: ").upper(), bold=True, size=8)
+            _header_cell(
+                page, x, y, unit * 2, 30,
+                group.removeprefix("Laboratorio especial: ").upper(),
+            )
             _cell(page, x, y + 30, unit, 30, "OPE", bold=True, size=8)
             _cell(page, x + unit, y + 30, unit, 30, "INOP", bold=True, size=8)
             x += unit * 2
@@ -252,7 +281,6 @@ def _table(doc, title, groups, rows, signature, subtitle, timestamp, *, omit_emp
                 _cell(page, x, y, unit, 32, value, bold=total_row, size=8)
                 x += unit
             y += 32
-        _text(page, pymupdf.Rect(36, 446, 924, 486), signature, 10, True)
         _text(page, pymupdf.Rect(36, 490, 924, 505), "FUENTE: Sala Situacional/DIGESALUD", 9, align=0)
         _text(page, pymupdf.Rect(36, 506, 924, 521), f"{timestamp} | Parte {part}/{len(chunks)}", 8, align=0)
         _text(page, pymupdf.Rect(36, 522, 924, 538), "OPE: operativo | INOP: inoperativo | 0: sin unidades registradas", 8)
@@ -275,7 +303,6 @@ def generate_pdf(
     omit_empty = omit_empty or consolidated
     if not data:
         raise InventoryError("No hay centros registrados para generar el informe.")
-    signature = "CONSOLIDADO GENERAL - ADMINISTRACIÓN" if consolidated else f"DIRECTOR DEL {data[0][0]['name']}"
     subtitle = (
         "SUMATORIA DE TODOS LOS CENTROS"
         if consolidated and category != "Equipos médicos especiales" else ""
@@ -303,7 +330,7 @@ def generate_pdf(
                 if consolidated:
                     rows.append(("", "TOTAL GENERAL", totals, True))
                 _table(
-                    doc, f"{title} {title_suffix}", groups, rows, signature, subtitle, timestamp,
+                    doc, f"{title} {title_suffix}", groups, rows, subtitle, timestamp,
                     omit_empty=omit_empty,
                 )
             return doc.tobytes(garbage=4, deflate=True)
@@ -358,14 +385,14 @@ def generate_pdf(
                     rows.append(("", "TOTAL GENERAL", totals, True))
                     _table(
                         doc, title, (f"{equipment_kind.upper()}\nSITUACIÓN",), rows,
-                        signature, subtitle, timestamp, omit_empty=omit_empty,
+                        subtitle, timestamp, omit_empty=omit_empty,
                     )
                     rendered = True
                 if not rendered:
                     empty_heading = f"{kind.upper()}\nSITUACIÓN" if kind else "SITUACIÓN"
                     _table(
                         doc, title, (empty_heading,), [("", "TOTAL GENERAL", [0, 0], True)],
-                        signature, subtitle, timestamp, omit_empty=omit_empty,
+                        subtitle, timestamp, omit_empty=omit_empty,
                     )
                 continue
             rows = []
@@ -405,7 +432,7 @@ def generate_pdf(
                 title if category == "Equipos médicos especiales" else f"{title} {title_suffix}"
             )
             _table(
-                doc, report_title, groups, rows, signature, subtitle, timestamp,
+                doc, report_title, groups, rows, subtitle, timestamp,
                 omit_empty=omit_empty,
             )
             if section == 4 and only != "Banco de sangre" and (
@@ -422,7 +449,7 @@ def generate_pdf(
                 if special_rows:
                     _table(
                         doc, f"LABORATORIOS ESPECIALES {title_suffix}", ("Situación",), special_rows,
-                        signature, subtitle, timestamp,
+                        subtitle, timestamp,
                     )
         return doc.tobytes(garbage=4, deflate=True)
 

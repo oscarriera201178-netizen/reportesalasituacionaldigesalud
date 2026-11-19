@@ -288,6 +288,8 @@ class ReportTests(unittest.TestCase):
                     self.assertNotIn("DE TODOS LOS CENTROS DE SALUD", text)
                     self.assertNotIn("SUMATORIA DE TODOS LOS CENTROS", text)
                     self.assertNotIn("SUMA POR DESCRIPCIÓN:", text)
+                    self.assertNotIn("DIRECTOR DEL", text)
+                    self.assertNotIn("CONSOLIDADO GENERAL - ADMINISTRACIÓN", text)
                     title_span = next(
                         span
                         for block in document[0].get_text("dict")["blocks"]
@@ -298,7 +300,10 @@ class ReportTests(unittest.TestCase):
                     )
                     self.assertEqual(title_span["size"], 16)
                     for center_name in center_names:
-                        self.assertIn(center_name, text)
+                        self.assertIn(
+                            center_name if center_id is None else center_name.upper(),
+                            text,
+                        )
                         self.assertNotIn(f"{center_name} /", text)
                     words = document[0].get_text("words")
                     total_label = "GENERAL" if center_id is None else "TOTAL"
@@ -373,6 +378,23 @@ class ReportTests(unittest.TestCase):
                 operational_word = next(word for word in words if word[4] == "OPE")
                 self.assertLess(equipment_word[1], situation_word[1])
                 self.assertLess(situation_word[1], operational_word[1])
+                spans = [
+                    span
+                    for block in page.get_text("dict")["blocks"]
+                    if "lines" in block
+                    for line in block["lines"]
+                    for span in line["spans"]
+                ]
+                for label in (equipment_type.upper(), "SITUACIÓN"):
+                    span = next(span for span in spans if span["text"] == label)
+                    self.assertEqual(span["size"], 9)
+                divider_y = (equipment_word[3] + situation_word[1]) / 2
+                self.assertTrue(any(
+                    item[0] == "l"
+                    and abs(item[1].y - divider_y) < 1
+                    for drawing in page.get_drawings()
+                    for item in drawing["items"]
+                ))
                 title = " ".join(
                     word[4] for word in words
                     if 109.99 <= word[1] and word[3] <= 138.01
@@ -486,6 +508,8 @@ class ReportTests(unittest.TestCase):
                         banner = [word for word in page.get_text("words") if word[4] == "VICESALUDBSS"]
                         self.assertEqual(len(banner), 1)
                         self.assertLess(banner[0][3], 96)
+                        self.assertNotIn("DIRECTOR DEL", page.get_text())
+                        self.assertNotIn("CONSOLIDADO GENERAL - ADMINISTRACIÓN", page.get_text())
                         for image in page.get_image_info():
                             self.assertLessEqual(image["bbox"][3], 96)
                         content = [
@@ -544,7 +568,8 @@ class ReportTests(unittest.TestCase):
                 text = page.get_text()
                 self.assertIn("VICESALUDBSS", text)
                 self.assertTrue(page.get_images())
-                self.assertIn("DIRECTOR DEL Centro Norte", text)
+                self.assertNotIn("DIRECTOR DEL", text)
+                self.assertNotIn("CONSOLIDADO GENERAL - ADMINISTRACIÓN", text)
                 self.assertNotIn("Centro Sur", text)
                 self.assertIn("FUENTE: Sala Situacional/DIGESALUD", text)
             self.assertIn("UCI", doc[0].get_text())
