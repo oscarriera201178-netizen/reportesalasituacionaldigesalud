@@ -35,6 +35,12 @@ SUMMARY_CATEGORIES = {
     "Equipos médicos especiales": (5, None),
     "Plantas eléctricas": (6, None),
 }
+MILITARY_TITLE_CATEGORIES = (
+    "Camas hospitalarias",
+    "Bancos de sangre",
+    "Laboratorios",
+    "Quirófanos",
+)
 SPECIAL_EQUIPMENT_TITLE_TYPES = {
     "Máquina de anestesia": "MÁQUINAS DE ANESTESIA",
     "Tomógrafo": "TOMÓGRAFOS",
@@ -357,7 +363,8 @@ def generate_pdf(
     omit_empty = omit_empty or consolidated
     if not data:
         raise InventoryError("No hay centros registrados para generar el informe.")
-    subtitle = (
+    military_title = consolidated and category in MILITARY_TITLE_CATEGORIES
+    subtitle = "" if military_title else (
         "SUMATORIA DE TODOS LOS CENTROS"
         if consolidated and category not in (
             "Equipos médicos especiales", "Todos los vehículos",
@@ -369,7 +376,10 @@ def generate_pdf(
         )
     )
     title_suffix = (
-        "DE TODOS LOS CENTROS DE SALUD" if consolidated
+        "DE LA RED SANITARIA MILITAR"
+        if military_title
+        else "DE TODOS LOS CENTROS DE SALUD"
+        if consolidated
         else f"DEL {data[0][0]['name'].split(' - ', 1)[0].upper()}"
     )
     timestamp = datetime.now(REPORT_TIMEZONE).strftime("Generado: %d/%m/%Y %H:%M (hora de Venezuela)")
@@ -498,7 +508,8 @@ def generate_pdf(
             )
             _table(
                 doc, report_title, groups, rows, subtitle, timestamp,
-                omit_empty=omit_empty, title_align=1 if section in (2, 5) else 0,
+                omit_empty=omit_empty,
+                title_align=1 if military_title or section in (2, 5) else 0,
             )
             if section == 4 and only != "Banco de sangre" and (
                 kind in (None, "Laboratorios especiales") or kind.startswith("Laboratorio especial: ")
@@ -515,6 +526,7 @@ def generate_pdf(
                     _table(
                         doc, f"LABORATORIOS ESPECIALES {title_suffix}", ("Situación",), special_rows,
                         subtitle, timestamp,
+                        title_align=1 if military_title else 0,
                     )
         return doc.tobytes(garbage=4, deflate=True)
 

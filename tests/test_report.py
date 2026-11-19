@@ -628,9 +628,39 @@ class ReportTests(unittest.TestCase):
             filetype="pdf",
         ) as doc:
             self.assertIn(
-                "CAMAS HOSPITALARIAS DE TODOS LOS CENTROS DE SALUD",
+                "CAMAS HOSPITALARIAS DE LA RED SANITARIA MILITAR",
                 " ".join(doc[0].get_text().split()),
             )
+            self.assertNotIn("SUMATORIA DE TODOS LOS CENTROS", doc[0].get_text())
+
+    def test_military_consolidated_titles_for_hospital_inventory_categories(self):
+        expected_titles = {
+            "Camas hospitalarias": "CAMAS HOSPITALARIAS",
+            "Bancos de sangre": "BANCOS DE SANGRE",
+            "Laboratorios": "LABORATORIOS",
+            "Quirófanos": "QUIRÓFANOS",
+        }
+        for category, title in expected_titles.items():
+            with self.subTest(category=category), pymupdf.open(
+                stream=generate_pdf(self.store, self.token, category=category),
+                filetype="pdf",
+            ) as document:
+                text = " ".join(document[0].get_text().split())
+                full_title = f"{title} DE LA RED SANITARIA MILITAR"
+                self.assertIn(full_title, text)
+                self.assertNotIn("DE TODOS LOS CENTROS DE SALUD", text)
+                self.assertNotIn("SUMATORIA DE TODOS LOS CENTROS", text)
+                title_span = next(
+                    span
+                    for block in document[0].get_text("dict")["blocks"]
+                    if "lines" in block
+                    for line in block["lines"]
+                    for span in line["spans"]
+                    if span["text"].startswith(title)
+                )
+                title_width = title_span["bbox"][2] - title_span["bbox"][0]
+                title_center = (title_span["bbox"][0] + title_span["bbox"][2]) / 2
+                self.assertLess(abs(title_center - 480), title_width)
 
     def test_inventory_pdf_titles_fit_one_line_in_every_report(self):
         self.populate(self.north)
