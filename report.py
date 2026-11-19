@@ -207,7 +207,7 @@ def _title_lines(rectangle, text):
     return lines
 
 
-def _title(page, rectangle, text):
+def _title(page, rectangle, text, *, align=0):
     rectangle = pymupdf.Rect(rectangle)
     lines = _title_lines(rectangle, text)
     title_rect = pymupdf.Rect(
@@ -217,6 +217,7 @@ def _title(page, rectangle, text):
     shape = page.new_shape()
     spare = shape.insert_textbox(
         title_rect, "\n".join(lines), fontsize=TITLE_FONT_SIZE, fontname="hebo",
+        align=align,
     )
     if spare < 0:
         raise InventoryError("No se pudo ajustar el título del PDF.")
@@ -256,7 +257,9 @@ def _header_cell(page, x, y, width, height, text):
             _text(page, text_rect, label, 9, True)
 
 
-def _table(doc, title, groups, rows, subtitle, timestamp, *, omit_empty=False):
+def _table(
+    doc, title, groups, rows, subtitle, timestamp, *, omit_empty=False, title_align=0,
+):
     if len(groups) > 6:
         for start in range(0, len(groups), 6):
             part_rows = [
@@ -266,7 +269,7 @@ def _table(doc, title, groups, rows, subtitle, timestamp, *, omit_empty=False):
             _table(
                 doc, title, groups[start:start + 6], part_rows,
                 f"{subtitle} | Total correspondiente a los tipos de este cuadro" if subtitle else "", timestamp,
-                omit_empty=omit_empty,
+                omit_empty=omit_empty, title_align=title_align,
             )
         return
     no_units = False
@@ -306,7 +309,10 @@ def _table(doc, title, groups, rows, subtitle, timestamp, *, omit_empty=False):
                 pymupdf.Rect(36, 8, 924, 96), banner, 0,
                 clip=pymupdf.Rect(0, 0, 960, 95),
             )
-        _title(page, pymupdf.Rect(36, 110, 924, 500), title.rstrip("."))
+        _title(
+            page, pymupdf.Rect(36, 110, 924, 500), title.rstrip("."),
+            align=title_align,
+        )
         if subtitle:
             _text(
                 page, pymupdf.Rect(36, 144 + title_offset, 924, 180 + title_offset),
@@ -389,7 +395,7 @@ def generate_pdf(
                     rows.append(("", "TOTAL GENERAL", totals, True))
                 _table(
                     doc, f"{title} {title_suffix}", groups, rows, subtitle, timestamp,
-                    omit_empty=omit_empty,
+                    omit_empty=omit_empty, title_align=1,
                 )
             return doc.tobytes(garbage=4, deflate=True)
         for section, (title, groups) in enumerate(SECTIONS):
@@ -491,7 +497,7 @@ def generate_pdf(
             )
             _table(
                 doc, report_title, groups, rows, subtitle, timestamp,
-                omit_empty=omit_empty,
+                omit_empty=omit_empty, title_align=1 if section == 2 else 0,
             )
             if section == 4 and only != "Banco de sangre" and (
                 kind in (None, "Laboratorios especiales") or kind.startswith("Laboratorio especial: ")

@@ -13,14 +13,18 @@ from store import AccessError, InventoryError, REPORT_PENDING, REPORT_TIMEZONE, 
 PASSWORD = "Test-report-password-123"
 
 
-def pdf_title_sizes(page):
+def pdf_title_spans(page):
     return [
-        span["size"]
+        span
         for block in page.get_text("dict")["blocks"]
         for line in block.get("lines", [])
         for span in line["spans"]
         if 100 <= span["bbox"][1] < 205 and span["size"] >= 15
     ]
+
+
+def pdf_title_sizes(page):
+    return [span["size"] for span in pdf_title_spans(page)]
 
 
 class MilitaryReportLayoutTests(unittest.TestCase):
@@ -613,6 +617,26 @@ class ReportTests(unittest.TestCase):
                     ]
                     self.assertTrue(sizes)
                     self.assertEqual(set(sizes), {16.0})
+
+    def test_vehicle_pdf_titles_are_centered(self):
+        self.populate(self.north)
+        for category in (None, "Vehículos", "Todos los vehículos"):
+            with self.subTest(category=category), pymupdf.open(
+                stream=generate_pdf(self.store, self.token, self.north, category=category),
+                filetype="pdf",
+            ) as document:
+                titles = [
+                    span for page in document for span in pdf_title_spans(page)
+                ]
+                if category != "Todos los vehículos":
+                    titles = [
+                        span for span in titles
+                        if "VEHÍCULOS PROTOCOLARES" in " ".join(span["text"].split())
+                    ]
+                self.assertTrue(titles)
+                for span in titles:
+                    center = (span["bbox"][0] + span["bbox"][2]) / 2
+                    self.assertAlmostEqual(center, 480, delta=1)
 
     def test_center_pdf_matches_six_sections_and_director_name(self):
         self.populate(self.north)
