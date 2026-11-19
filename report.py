@@ -320,9 +320,11 @@ def generate_pdf(
                     equipment_title = (
                         f" ({SPECIAL_EQUIPMENT_TITLE_TYPES[kind]})" if kind is not None else ""
                     )
+                    center_title = (
+                        title_suffix if not consolidated else "DE LA RED SANITARIA MILITAR"
+                    )
                     title = (
-                        f"EQUIPOS MÉDICOS ESPECIALES{equipment_title} "
-                        "DE LA RED SANITARIA MILITAR."
+                        f"EQUIPOS MÉDICOS ESPECIALES{equipment_title} {center_title}."
                     )
             if section == 4 and only != "Banco de sangre":
                 special_groups = tuple(dict.fromkeys(
@@ -354,11 +356,13 @@ def generate_pdf(
                     for description, pair in sorted(equipment.items()):
                         if omit_empty and sum(pair) == 0:
                             continue
-                        label = (
-                            center["name"]
-                            if category == "Equipos médicos especiales"
-                            else f"{center['name']} / {description}" if consolidated else description
-                        )
+                        if category == "Equipos médicos especiales":
+                            label = description if not consolidated else center["name"]
+                        else:
+                            label = (
+                                f"{center['name']} / {description}"
+                                if consolidated else description
+                            )
                         rows.append((len(rows) + 1, label, pair, False))
                         totals = [left + right for left, right in zip(totals, pair)]
                         if consolidated:

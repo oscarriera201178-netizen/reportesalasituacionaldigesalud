@@ -272,8 +272,12 @@ class ReportTests(unittest.TestCase):
                     filetype="pdf",
                 ) as document:
                     text = " ".join(document[0].get_text().split())
+                    title_suffix = (
+                        "DE LA RED SANITARIA MILITAR."
+                        if center_id is None else "DEL CENTRO NORTE."
+                    )
                     self.assertIn(
-                        f"EQUIPOS MÉDICOS ESPECIALES ({plural}) DE LA RED SANITARIA MILITAR.",
+                        f"EQUIPOS MÉDICOS ESPECIALES ({plural}) {title_suffix}",
                         text,
                     )
                     self.assertNotIn("DE TODOS LOS CENTROS DE SALUD", text)
@@ -302,6 +306,32 @@ class ReportTests(unittest.TestCase):
                         if word[0] > 331 and abs(word[1] - total[1]) < 1 and word[4].isdigit()
                     ]
                     self.assertEqual(actual, [value * multiplier for value in (*pair, sum(pair))])
+
+    def test_all_special_equipment_pdf_uses_center_name_and_lists_inventory_types(self):
+        self.populate(self.north)
+        with self.store.transaction() as connection:
+            connection.execute(
+                "INSERT INTO equipment_counts(center_id, category, kind, operational, unavailable) "
+                "VALUES(?, 'Equipos médicos especiales', 'Resonador', 1, 0)",
+                (self.north,),
+            )
+
+        with pymupdf.open(
+            stream=generate_pdf(
+                self.store, self.token, self.north,
+                category="Equipos médicos especiales",
+            ),
+            filetype="pdf",
+        ) as document:
+            page = document[0]
+            text = " ".join(page.get_text().split())
+            self.assertIn("EQUIPOS MÉDICOS ESPECIALES DEL CENTRO NORTE.", text)
+            descriptions = {
+                word[4] for word in page.get_text("words")
+                if word[0] < 331 and word[1] > 260
+            }
+            self.assertIn("Tomógrafo", descriptions)
+            self.assertIn("Resonador", descriptions)
 
     def test_named_laboratory_filter_excludes_other_special_labs_and_central(self):
         with self.store.transaction() as connection:
@@ -434,7 +464,8 @@ class ReportTests(unittest.TestCase):
                         )
                         if category == "Equipos médicos especiales":
                             self.assertEqual(
-                                title, "EQUIPOS MÉDICOS ESPECIALES DE LA RED SANITARIA MILITAR.",
+                                title,
+                                f"EQUIPOS MÉDICOS ESPECIALES DEL {center['name'].split(' - ', 1)[0].upper()}.",
                             )
                         else:
                             self.assertTrue(title.endswith(suffix), title)
