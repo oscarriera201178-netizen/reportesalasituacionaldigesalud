@@ -26,7 +26,6 @@ from store import (
     REPORT_LOADED, REPORT_SECTIONS, REPORT_TIMEZONE, load_center_catalog,
     SPECIAL_EQUIPMENT_TYPES, STATES, Store, VEHICLE_GROUPS, bed_quantity_rows,
     TRAFFIC_TYPES, TRAFFIC_CONDITIONS, TRAFFIC_ROLES, canonical_bed_type, weekly_status,
-    STAFFING_TABLES,
 )
 
 
@@ -279,105 +278,6 @@ def create_app(store=None, *, secret_key=None):
             period_week=period.isocalendar().week,
             period_start=period.strftime("%d/%m/%Y"),
             period_end=(period + timedelta(days=4)).strftime("%d/%m/%Y"),
-        )
-
-    @app.route("/staffing", methods=("GET", "POST"))
-    def staffing():
-        current_actor = require_role()
-        if not isinstance(current_actor, dict):
-            return current_actor or redirect(url_for("login"))
-        is_admin = current_actor["role"] == "admin"
-        if not is_admin and current_actor["username"] != "guardia1":
-            abort(403)
-        store_obj = get_store()
-        snapshot = store_obj.staffing_snapshot(token())
-        centers = snapshot["centers"]
-        selected = request.values.get("center", "")
-        if not selected and centers:
-            selected = str(centers[0]["id"])
-        center = None
-        if selected:
-            try:
-                center_id = int(selected)
-            except ValueError:
-                abort(400, "Centro seleccionado no válido.")
-            center = next((item for item in centers if item["id"] == center_id), None)
-            if center is None:
-                abort(400, "Centro seleccionado no válido.")
-
-        professions = snapshot["professions"]
-        if request.method == "POST":
-            action = request.form.get("action", "")
-            if action == "save_professions":
-                if not is_admin:
-                    abort(403)
-                store_obj.save_staffing_professions(
-                    token(), request.form.get("professions", "").splitlines(),
-                )
-                flash("Profesiones actualizadas.", "success")
-                return redirect(url_for("staffing", center=selected))
-            if action != "save_counts" or center is None:
-                abort(400, "Acción o centro no válido.")
-            values = {}
-            for table in STAFFING_TABLES:
-                rows = list(table["rows"])
-                if table["key"] == "professions":
-                    rows.extend(professions)
-                for row_index, row_label in enumerate(rows):
-                    for column_index, (column_key, _column_label) in enumerate(table["columns"]):
-                        field_name = f"count_{table['key']}_{row_index}_{column_index}"
-                        raw = request.form.get(field_name, "0").strip()
-                        try:
-                            amount = int(raw or "0")
-                        except ValueError as error:
-                            raise InventoryError("Cada cantidad debe ser un número entero.") from error
-                        values[(table["key"], row_label, column_key)] = amount
-            store_obj.save_staffing_counts(token(), center["id"], values)
-            flash(f"Parte del personal guardado para {center['name']}.", "success")
-            return redirect(url_for("staffing", center=center["id"]))
-
-        center_counts = snapshot["counts"].get(center["id"], {}) if center else {}
-        table_rows = []
-        consolidated_rows = []
-        for definition in STAFFING_TABLES:
-            row_labels = list(definition["rows"])
-            if definition["key"] == "professions":
-                row_labels.extend(professions)
-
-            def summarize(source):
-                result_rows = []
-                column_totals = [0] * len(definition["columns"])
-                for row_index, row_label in enumerate(row_labels):
-                    amounts = [
-                        source.get((definition["key"], row_label, column_key), 0)
-                        for column_key, _column_label in definition["columns"]
-                    ]
-                    for index, amount in enumerate(amounts):
-                        column_totals[index] += amount
-                    result_rows.append({
-                        "label": row_label,
-                        "amounts": amounts,
-                        "total": sum(amounts),
-                        "index": row_index,
-                    })
-                return {
-                    "rows": result_rows,
-                    "column_totals": column_totals,
-                    "total": sum(column_totals),
-                }
-
-            table_rows.append({**definition, **summarize(center_counts)})
-            all_counts = {}
-            for source in snapshot["counts"].values():
-                for key, amount in source.items():
-                    if key[0] == definition["key"]:
-                        all_counts[key] = all_counts.get(key, 0) + amount
-            consolidated_rows.append({**definition, **summarize(all_counts)})
-        return render_template(
-            "staffing.html", centers=centers, center=center,
-            professions=professions, profession_text="\n".join(professions),
-            tables=table_rows, consolidated_tables=consolidated_rows,
-            is_admin=is_admin,
         )
 
     @app.route("/admin/inventory/<int:center_id>/return", methods=("GET", "POST"))

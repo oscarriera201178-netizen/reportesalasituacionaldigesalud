@@ -68,11 +68,6 @@ th { background: #eaf1ef; }
 .account-card summary, details summary { cursor: pointer; font-weight: 750; padding: .5rem 0; }
 .account-form { margin: 1rem 0; }
 .inline-form { margin: .6rem 0; }
-.staffing-card { margin: 1.5rem 0; }
-.staffing-card h3 { color: var(--green-dark); }
-.staffing-table { min-width: 760px; }
-.staffing-table caption { padding: .7rem; font-weight: 800; text-align: left; }
-.staffing-table input { width: 6rem; padding: .4rem; }
 @media (max-width: 700px) {
   .site-header { align-items: flex-start; flex-direction: column; }
   .user-bar { width: 100%; justify-content: space-between; }

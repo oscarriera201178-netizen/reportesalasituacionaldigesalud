@@ -10,9 +10,6 @@
     <a class="button {% if category == key %}button-primary{% else %}button-muted{% endif %}" href="{{ url_for('inventory', center_id=center.id, section=key) }}">{{ label }}</a>
   {% endfor %}
   <a class="button button-muted" href="{{ url_for('military_patient_records') }}">Registros de Pacientes Militares</a>
-  {% if current_actor.username == "guardia1" %}
-    <a class="button button-muted" href="{{ url_for('staffing') }}">PARTE DEL PERSONAL</a>
-  {% endif %}
 </nav>
 {% if loaded and status.editable %}
   <div class="notice notice-success">Sección cargada y bloqueada hasta el envío final. Puedes editarla para corregirla.</div>

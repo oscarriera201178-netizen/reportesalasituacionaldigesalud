@@ -16,9 +16,6 @@
     {% if current_actor.role == "admin" or component_menu %}
       <a class="button button-primary" href="{{ url_for('component_traffic_report') }}">Militares Involucrados en Accidentes de Tránsito</a>
     {% endif %}
-    {% if current_actor.username == "guardia1" %}
-      <a class="button button-primary" href="{{ url_for('staffing') }}">PARTE DEL PERSONAL</a>
-    {% endif %}
   </nav>
   {% if not component_menu %}<a class="button button-muted" href="{{ url_for('home') }}">Regresar</a>{% endif %}
 </section>
