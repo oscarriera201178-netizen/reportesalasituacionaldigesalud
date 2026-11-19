@@ -26,7 +26,7 @@ from store import (
     REPORT_LOADED, REPORT_SECTIONS, REPORT_TIMEZONE, load_center_catalog,
     SPECIAL_EQUIPMENT_TYPES, STATES, Store, VEHICLE_GROUPS, bed_quantity_rows,
     TRAFFIC_TYPES, TRAFFIC_CONDITIONS, TRAFFIC_ROLES, canonical_bed_type, weekly_status,
-    STAFFING_TABLES,
+    STAFFING_CENTER_USERS, STAFFING_CAPTURE_USERS, STAFFING_TABLES,
 )
 
 
@@ -287,7 +287,7 @@ def create_app(store=None, *, secret_key=None):
         if not isinstance(current_actor, dict):
             return current_actor or redirect(url_for("login"))
         is_admin = current_actor["role"] == "admin"
-        if not is_admin and current_actor["username"] != "guardia1":
+        if not is_admin and current_actor["username"] not in STAFFING_CAPTURE_USERS:
             abort(403)
         store_obj = get_store()
         snapshot = store_obj.staffing_snapshot(token())
@@ -306,6 +306,7 @@ def create_app(store=None, *, secret_key=None):
                 abort(400, "Centro seleccionado no válido.")
 
         professions = snapshot["professions"]
+        specialties = snapshot["specialties"]
         if request.method == "POST":
             action = request.form.get("action", "")
             if action == "save_professions":
@@ -316,13 +317,34 @@ def create_app(store=None, *, secret_key=None):
                 )
                 flash("Profesiones actualizadas.", "success")
                 return redirect(url_for("staffing", center=selected))
+            if action == "save_specialties":
+                if not is_admin:
+                    abort(403)
+                store_obj.save_staffing_specialties(
+                    token(), request.form.get("specialties", "").splitlines(),
+                )
+                flash("Especialidades actualizadas.", "success")
+                return redirect(url_for("staffing", center=selected))
+            if action == "add_row":
+                if center is None:
+                    abort(400, "Centro seleccionado no válido.")
+                row_type = request.form.get("row_type", "")
+                if row_type not in ("professions", "specialties"):
+                    abort(400, "Cuadro seleccionado no válido.")
+                store_obj.add_staffing_row(
+                    token(), center["id"], row_type, request.form.get("row_label", ""),
+                )
+                flash("Fila agregada al cuadro.", "success")
+                return redirect(url_for("staffing", center=center["id"]))
             if action != "save_counts" or center is None:
                 abort(400, "Acción o centro no válido.")
             values = {}
             for table in STAFFING_TABLES:
                 rows = list(table["rows"])
                 if table["key"] == "professions":
-                    rows.extend(professions)
+                    rows.extend(snapshot["rows"][center["id"]]["professions"])
+                elif table["key"] == "specialties":
+                    rows.extend(snapshot["rows"][center["id"]]["specialties"])
                 for row_index, row_label in enumerate(rows):
                     for column_index, (column_key, _column_label) in enumerate(table["columns"]):
                         field_name = f"count_{table['key']}_{row_index}_{column_index}"
@@ -337,17 +359,22 @@ def create_app(store=None, *, secret_key=None):
             return redirect(url_for("staffing", center=center["id"]))
 
         center_counts = snapshot["counts"].get(center["id"], {}) if center else {}
+        center_rows = snapshot["rows"].get(
+            center["id"], {"professions": [], "specialties": []},
+        ) if center else {"professions": [], "specialties": []}
         table_rows = []
         consolidated_rows = []
         for definition in STAFFING_TABLES:
             row_labels = list(definition["rows"])
             if definition["key"] == "professions":
-                row_labels.extend(professions)
+                row_labels.extend(center_rows["professions"])
+            elif definition["key"] == "specialties":
+                row_labels.extend(center_rows["specialties"])
 
-            def summarize(source):
+            def summarize(source, labels=row_labels):
                 result_rows = []
                 column_totals = [0] * len(definition["columns"])
-                for row_index, row_label in enumerate(row_labels):
+                for row_index, row_label in enumerate(labels):
                     amounts = [
                         source.get((definition["key"], row_label, column_key), 0)
                         for column_key, _column_label in definition["columns"]
@@ -367,17 +394,33 @@ def create_app(store=None, *, secret_key=None):
                 }
 
             table_rows.append({**definition, **summarize(center_counts)})
+            consolidated_labels = list(definition["rows"])
+            if definition["key"] == "professions":
+                consolidated_labels.extend(professions)
+            elif definition["key"] == "specialties":
+                consolidated_labels.extend(specialties)
             all_counts = {}
             for source in snapshot["counts"].values():
                 for key, amount in source.items():
                     if key[0] == definition["key"]:
                         all_counts[key] = all_counts.get(key, 0) + amount
-            consolidated_rows.append({**definition, **summarize(all_counts)})
+            consolidated_definition = {**definition, "rows": tuple(consolidated_labels)}
+            consolidated_rows.append({
+                **consolidated_definition, **summarize(all_counts, consolidated_labels),
+            })
         return render_template(
             "staffing.html", centers=centers, center=center,
             professions=professions, profession_text="\n".join(professions),
+            specialties=specialties, specialty_text="\n".join(specialties),
+            selected_rows=center_rows,
+            available_professions=[
+                value for value in professions if value not in center_rows["professions"]
+            ],
+            available_specialties=[
+                value for value in specialties if value not in center_rows["specialties"]
+            ],
             tables=table_rows, consolidated_tables=consolidated_rows,
-            is_admin=is_admin,
+            is_admin=is_admin, is_centro33=current_actor["username"] in STAFFING_CENTER_USERS,
         )
 
     @app.route("/admin/inventory/<int:center_id>/return", methods=("GET", "POST"))

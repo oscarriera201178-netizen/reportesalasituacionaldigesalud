@@ -1344,7 +1344,7 @@ class HtmlApplicationTests(unittest.TestCase):
         })
         self.assertEqual(response.status_code, 400)
 
-    def test_staffing_is_available_to_admin_and_guardia1_only(self):
+    def test_staffing_dynamic_forms_are_available_to_centro33_and_guardia1(self):
         from store import STAFFING_TABLES
 
         with self.client.session_transaction() as browser_session:
@@ -1359,26 +1359,77 @@ class HtmlApplicationTests(unittest.TestCase):
             "center": str(self.center["id"]), "professions": "Odontología\nPsicología",
         })
         self.assertEqual(response.status_code, 302)
+        response = self.client.post("/staffing", data={
+            "csrf_token": csrf, "action": "save_specialties",
+            "center": str(self.center["id"]), "specialties": "Neurología",
+        })
+        self.assertEqual(response.status_code, 302)
+        self.store.create_center(
+            self.admin_token, "Centro Centro33", "Delta Amacuro", "centro33", CENTER_PASSWORD,
+        )
+        centro33 = self.store.login("centro33", CENTER_PASSWORD)
+        centro33_id = self.store.identity(centro33)["center_id"]
+        with self.client.session_transaction() as browser_session:
+            browser_session["token"] = centro33
+        inventory = self.client.get(f"/inventory/{centro33_id}")
+        self.assertIn(b'href="/staffing">PARTE DEL PERSONAL</a>', inventory.data)
+        page = self.client.get("/staffing")
+        self.assertEqual(page.status_code, 200)
+        self.assertIn(b"Centro Centro33", page.data)
+        self.assertIn(b'name="row_type" value="professions"', page.data)
+        self.assertIn(b'name="row_type" value="specialties"', page.data)
+        self.assertIn(b">Odontolog\xc3\xada</option>", page.data)
+        self.assertIn(b">Neurolog\xc3\xada</option>", page.data)
+        self.assertIn(b"PDL = Privado de Libertad", page.data)
+        self.assertIn(b"PDSC = Presunto desertor sin Capturar", page.data)
+        csrf = re.search(rb'name="csrf_token" value="([^"]+)"', page.data).group(1).decode()
+        for row_type, row_label in (("professions", "Odontología"), ("specialties", "Neurología")):
+            response = self.client.post("/staffing", data={
+                "csrf_token": csrf, "action": "add_row", "center": str(centro33_id),
+                "row_type": row_type, "row_label": row_label,
+            })
+            self.assertEqual(response.status_code, 302)
+        page = self.client.get("/staffing")
+        self.assertIn(b"Odontolog\xc3\xada", page.data)
+        self.assertIn(b"Neurolog\xc3\xada", page.data)
+        html = page.data.decode()
+        headers = re.findall(
+            r'<table class="staffing-table">.*?<thead>\s*<tr>(.*?)</tr>',
+            html, re.DOTALL,
+        )
+        self.assertTrue(headers)
+        for row in headers:
+            self.assertEqual(re.findall(r"<th>(.*?)</th>", row)[-1], "TOTAL")
 
-        fields = {
-            "csrf_token": csrf, "action": "save_counts",
-        }
+        fields = {"csrf_token": csrf, "action": "save_counts"}
         for table in STAFFING_TABLES:
             rows = list(table["rows"])
             if table["key"] == "professions":
-                rows.extend(("Odontología", "Psicología"))
+                rows.append("Odontología")
+            elif table["key"] == "specialties":
+                rows.append("Neurología")
             for row_index, _row_label in enumerate(rows):
                 for column_index, _column in enumerate(table["columns"]):
+                    target = (
+                        ("professions", 4, 0) if table["key"] == "professions"
+                        else ("specialties", 0, 0)
+                    )
                     fields[f"count_{table['key']}_{row_index}_{column_index}"] = (
-                        "5" if (table["key"], row_index, column_index) == ("professions", 4, 0) else "0"
+                        "5" if (table["key"], row_index, column_index) == target else "0"
                     )
         response = self.client.post(
-            f"/staffing?center={self.center['id']}", data=fields,
+            f"/staffing?center={centro33_id}", data=fields,
         )
         self.assertEqual(response.status_code, 302)
-        page = self.client.get(f"/staffing?center={self.center['id']}")
-        self.assertIn(b"Odontolog\xc3\xada", page.data)
-        self.assertIn(b'value="5"', page.data)
+        snapshot = self.store.staffing_snapshot(self.admin_token)
+        self.assertEqual(
+            snapshot["counts"][centro33_id][("professions", "Odontología", "generals")],
+            5,
+        )
+        self.assertEqual(
+            snapshot["counts"][centro33_id][("specialties", "Neurología", "generals")],
+            5,
+        )
 
         self.store.create_military_account(
             self.admin_token, "Guardia Nacional Bolivariana", "guardia1", CENTER_PASSWORD,
@@ -1401,8 +1452,6 @@ class HtmlApplicationTests(unittest.TestCase):
         guardia_fields = {"csrf_token": csrf, "action": "save_counts"}
         for table in STAFFING_TABLES:
             rows = list(table["rows"])
-            if table["key"] == "professions":
-                rows.extend(("Odontología", "Psicología"))
             for row_index, _row_label in enumerate(rows):
                 for column_index, _column in enumerate(table["columns"]):
                     guardia_fields[f"count_{table['key']}_{row_index}_{column_index}"] = (

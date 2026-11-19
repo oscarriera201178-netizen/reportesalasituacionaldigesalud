@@ -1393,7 +1393,7 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(center["name"], "Centro anterior")
         self.assertEqual(center["assigned_username"], "")
 
-    def test_staffing_professions_data_access_and_persisted_consolidation(self):
+    def test_staffing_dynamic_rows_and_center33_access_are_persisted_and_consolidated(self):
         from store import STAFFING_TABLES
 
         with self.assertRaises(AccessError):
@@ -1401,20 +1401,25 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(AccessError):
             self.store.save_staffing_professions(self.center, ["Odontología"])
         self.store.save_staffing_professions(self.admin, ["Odontología", "Psicología"])
+        self.store.add_staffing_row(self.admin, self.north, "professions", "Odontología")
+        self.store.add_staffing_row(self.admin, self.south, "professions", "Odontología")
+        self.store.add_staffing_row(self.admin, self.north, "specialties", "CARDIOLOGIA")
 
-        def all_values(professions=("Odontología", "Psicología")):
+        def all_values(professions=("Odontología",), specialties=()):
             return {
                 (table["key"], row, column_key): 0
                 for table in STAFFING_TABLES
                 for row in (
-                    (*table["rows"], *professions)
-                    if table["key"] == "professions" else table["rows"]
+                    (*table["rows"], *professions) if table["key"] == "professions"
+                    else (*table["rows"], *specialties) if table["key"] == "specialties"
+                    else table["rows"]
                 )
                 for column_key, _column_label in table["columns"]
             }
 
-        north_values = all_values()
+        north_values = all_values(specialties=("CARDIOLOGIA",))
         north_values[("professions", "Odontología", "generals")] = 4
+        north_values[("specialties", "CARDIOLOGIA", "generals")] = 2
         self.store.save_staffing_counts(self.admin, self.north, north_values)
         south_values = all_values()
         south_values[("professions", "Odontología", "generals")] = 3
@@ -1422,9 +1427,15 @@ class StoreTests(unittest.TestCase):
 
         snapshot = self.store.staffing_snapshot(self.admin)
         self.assertEqual(snapshot["professions"], ["Odontología", "Psicología"])
+        self.assertIn("CARDIOLOGIA", snapshot["specialties"])
+        self.assertEqual(snapshot["rows"][self.north]["professions"], ["Odontología"])
+        self.assertEqual(snapshot["rows"][self.north]["specialties"], ["CARDIOLOGIA"])
         self.assertEqual(snapshot["counts"][self.north][
             ("professions", "Odontología", "generals")
         ], 4)
+        self.assertEqual(snapshot["counts"][self.north][
+            ("specialties", "CARDIOLOGIA", "generals")
+        ], 2)
         self.assertEqual(snapshot["counts"][self.south][
             ("professions", "Odontología", "generals")
         ], 3)
@@ -1444,7 +1455,7 @@ class StoreTests(unittest.TestCase):
         guardia_center_id = self.store.identity(guardia_token)["center_id"]
         guardia_snapshot = self.store.staffing_snapshot(guardia_token)
         self.assertEqual([center["id"] for center in guardia_snapshot["centers"]], [guardia_center_id])
-        guardia_values = all_values(("Odontología",))
+        guardia_values = all_values(professions=(), specialties=())
         guardia_values[("components", "OFICIALES GENERALES", "GNB")] = 6
         self.store.save_staffing_counts(guardia_token, guardia_center_id, guardia_values)
         consolidated = self.store.staffing_snapshot(self.admin)
@@ -1466,6 +1477,28 @@ class StoreTests(unittest.TestCase):
             self.store.save_staffing_counts(
                 guardia2_token, self.store.identity(guardia2_token)["center_id"], guardia_values,
             )
+
+        self.store.create_center(
+            self.admin, "Centro Centro33", "Sur", "centro33", TEMPORARY,
+        )
+        centro33 = self.store.login("centro33", TEMPORARY)
+        centro33_id = self.store.identity(centro33)["center_id"]
+        self.assertEqual(
+            [center["id"] for center in self.store.staffing_snapshot(centro33)["centers"]],
+            [centro33_id],
+        )
+        with self.assertRaises(AccessError):
+            self.store.add_staffing_row(centro33, self.north, "professions", "Odontología")
+        self.store.add_staffing_row(centro33, centro33_id, "professions", "Odontología")
+        centro33_values = all_values(specialties=())
+        self.store.save_staffing_counts(centro33, centro33_id, centro33_values)
+        self.assertIn(
+            ("professions", "Odontología", "generals"),
+            self.store.staffing_snapshot(self.admin)["counts"][centro33_id],
+        )
+        self.store.save_staffing_specialties(self.admin, [])
+        reopened = Store(self.store.path)
+        self.assertEqual(reopened.staffing_snapshot(self.admin)["specialties"], [])
 
 
 if __name__ == "__main__":

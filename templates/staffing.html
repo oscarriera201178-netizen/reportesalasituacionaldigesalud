@@ -8,8 +8,8 @@
         <tr>
           <th>NRO</th>
           <th>{{ table.row_heading }}</th>
-          <th>TOTAL</th>
           {% for column_key, column_label in table.columns %}<th>{{ column_label }}</th>{% endfor %}
+          <th>TOTAL</th>
         </tr>
       </thead>
       <tbody>
@@ -17,7 +17,6 @@
           <tr>
             <td>{{ "%02d"|format(loop.index) }}</td>
             <td>{{ row.label }}</td>
-            <td>{{ row.total }}</td>
             {% for amount in row.amounts %}
               <td>
                 {% if editable %}
@@ -25,12 +24,13 @@
                 {% else %}{{ amount }}{% endif %}
               </td>
             {% endfor %}
+            <td>{{ row.total }}</td>
           </tr>
         {% endfor %}
         <tr class="total-row">
           <th colspan="2">TOTAL</th>
-          <th>{{ table.total }}</th>
           {% for amount in table.column_totals %}<th>{{ amount }}</th>{% endfor %}
+          <th>{{ table.total }}</th>
         </tr>
       </tbody>
     </table>
@@ -44,14 +44,18 @@
   <a class="button button-muted" href="{{ url_for('military_records_menu') }}">Registros de Militares</a>
 </div>
 {% else %}
-<a class="button button-muted" href="{{ url_for('component_records_menu') }}">Regresar</a>
+  {% if is_centro33 %}
+    <a class="button button-muted" href="{{ url_for('inventory', center_id=center.id) }}">Regresar</a>
+  {% else %}
+    <a class="button button-muted" href="{{ url_for('component_records_menu') }}">Regresar</a>
+  {% endif %}
 {% endif %}
 <section class="panel">
   <h1>PARTE DEL PERSONAL</h1>
   {% if is_admin %}
-    <p>Administración configura profesiones, revisa y consolida los cuadros. El formulario de captura está disponible solo en la cuenta guardia1.</p>
+    <p>Administración configura profesiones y especialidades, agrega filas a los cuadros por centro y consulta sus totales consolidados.</p>
   {% else %}
-    <p>Completa los cuadros correspondientes a {{ center.name }}.</p>
+    <p>Completa los cuadros correspondientes a {{ center.name }}. Selecciona en los desplegables las profesiones y especialidades que vas a agregar.</p>
   {% endif %}
   {% if is_admin %}
   <form method="get" class="filter-grid">
@@ -78,9 +82,41 @@
     </label>
     <button class="button button-primary" type="submit">Guardar profesiones</button>
   </form>
+  <h2>Especialidades médicas</h2>
+  <p>Agrega una especialidad por línea; estará disponible para seleccionar en el cuadro de médicos especialistas.</p>
+  <form method="post" class="form-stack">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <input type="hidden" name="action" value="save_specialties">
+    <input type="hidden" name="center" value="{{ center.id if center else '' }}">
+    <label>Especialidades
+      <textarea name="specialties" rows="6" maxlength="10200" placeholder="Ejemplo: Cardiología&#10;Traumatología">{{ specialty_text }}</textarea>
+    </label>
+    <button class="button button-primary" type="submit">Guardar especialidades</button>
+  </form>
 </section>
 {% endif %}
 {% if center %}
+  <section class="panel">
+    <h2>Agregar filas a los cuadros</h2>
+    {% for row_type, title, options in (
+      ("professions", "Profesiones", available_professions),
+      ("specialties", "Especialidades médicas", available_specialties)
+    ) %}
+      <form method="post" class="filter-grid">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="add_row">
+        <input type="hidden" name="center" value="{{ center.id }}">
+        <input type="hidden" name="row_type" value="{{ row_type }}">
+        <label>Agregar {{ title }}
+          <select name="row_label" required {% if not options %}disabled{% endif %}>
+            <option value="">{% if options %}Selecciona una opción{% else %}No hay opciones nuevas{% endif %}</option>
+            {% for option in options %}<option value="{{ option }}">{{ option }}</option>{% endfor %}
+          </select>
+        </label>
+        <button class="button button-primary" type="submit" {% if not options %}disabled{% endif %}>Agregar fila</button>
+      </form>
+    {% endfor %}
+  </section>
   <form method="post" action="{{ url_for('staffing', center=center.id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
     <input type="hidden" name="action" value="save_counts">
@@ -91,6 +127,9 @@
         <article class="staffing-card">
           <h3>{{ table.heading }} DEL {{ center.name }}</h3>
           {{ staffing_table(table, true) }}
+          {% if table.key == "absences" %}
+            <p><strong>Leyenda:</strong> PDL = Privado de Libertad. PDSC = Presunto desertor sin Capturar.</p>
+          {% endif %}
         </article>
       {% endfor %}
       <button class="button button-primary" type="submit">Guardar cuadros</button>

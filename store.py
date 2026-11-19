@@ -88,6 +88,11 @@ MILITARY_REDI = (
     "REDI Guayana", "REDI Occidental", "REDI Oriental",
     "REDI Marítima e Insular",
 )
+DEFAULT_STAFFING_SPECIALTIES = (
+    "CARDIOLOGIA", "TRAUMATOLOGIA", "GINECOLOGIA", "CIRUGIA GENERAL",
+)
+STAFFING_CENTER_USERS = ("centro33",)
+STAFFING_CAPTURE_USERS = ("guardia1", "centro33")
 TRAFFIC_TYPES = ("Moto", "Carro", "Bicicleta")
 TRAFFIC_CONDITIONS = (
     "Heridas leves", "Heridas graves", "Politraumatismo severo",
@@ -154,7 +159,7 @@ STAFFING_TABLES = (
         "title": "PERSONAL MILITAR - MÉDICOS ESPECIALISTAS",
         "heading": "PARTE DEL PERSONAL MILITAR",
         "row_heading": "ESPECIALIDADES",
-        "rows": ("CARDIOLOGIA", "TRAUMATOLOGIA", "GINECOLOGIA", "CIRUGIA GENERAL"),
+        "rows": (),
         "columns": (
             ("generals", "OFICIALES GENERALES"),
             ("superiors", "OFICIALES SUPERIORES"),
@@ -534,6 +539,19 @@ class Store:
                     id INTEGER PRIMARY KEY,
                     name TEXT NOT NULL COLLATE NOCASE UNIQUE
                 );
+                CREATE TABLE IF NOT EXISTS staffing_specialties (
+                    id INTEGER PRIMARY KEY,
+                    name TEXT NOT NULL COLLATE NOCASE UNIQUE
+                );
+                CREATE TABLE IF NOT EXISTS staffing_migrations (
+                    name TEXT PRIMARY KEY
+                );
+                CREATE TABLE IF NOT EXISTS staffing_rows (
+                    center_id INTEGER NOT NULL REFERENCES centers(id),
+                    quadro TEXT NOT NULL CHECK(quadro IN ('professions', 'specialties')),
+                    row_label TEXT NOT NULL,
+                    PRIMARY KEY(center_id, quadro, row_label)
+                );
                 CREATE TABLE IF NOT EXISTS staffing_counts (
                     center_id INTEGER NOT NULL REFERENCES centers(id),
                     quadro TEXT NOT NULL,
@@ -543,6 +561,27 @@ class Store:
                     PRIMARY KEY(center_id, quadro, row_label, column_key)
                 );
             """)
+            if not connection.execute(
+                "SELECT 1 FROM staffing_migrations WHERE name='specialties_seeded'",
+            ).fetchone():
+                connection.executemany(
+                    "INSERT OR IGNORE INTO staffing_specialties(name) VALUES(?)",
+                    [(name,) for name in DEFAULT_STAFFING_SPECIALTIES],
+                )
+                connection.execute(
+                    "INSERT INTO staffing_migrations(name) VALUES('specialties_seeded')",
+                )
+            for quadro, options_table in (
+                ("professions", "staffing_professions"),
+                ("specialties", "staffing_specialties"),
+            ):
+                connection.execute(
+                    f"INSERT OR IGNORE INTO staffing_rows(center_id,quadro,row_label) "
+                    f"SELECT DISTINCT s.center_id,s.quadro,s.row_label FROM staffing_counts s "
+                    f"JOIN {options_table} o ON o.name=s.row_label "
+                    f"WHERE s.quadro=?",
+                    (quadro,),
+                )
             if "attention_center" not in connection.table_columns("traffic_records"):
                 connection.execute(
                     "ALTER TABLE traffic_records ADD COLUMN attention_center TEXT NOT NULL DEFAULT ''",
@@ -859,21 +898,30 @@ class Store:
                     dict(row) for row in connection.execute(
                         "SELECT c.id,c.name FROM centers c WHERE c.account_type='health' "
                         "OR EXISTS (SELECT 1 FROM users u WHERE u.center_id=c.id "
-                        "AND u.role='center' AND u.username='guardia1') ORDER BY c.id",
+                        "AND u.role='center' AND u.username IN ('guardia1','centro33')) ORDER BY c.id",
                     ).fetchall()
                 ]
-            elif user["role"] == "center" and user["username"] == "guardia1":
+            elif user["role"] == "center" and user["username"] in STAFFING_CAPTURE_USERS:
                 centers = [
                     dict(row) for row in connection.execute(
-                        "SELECT id,name FROM centers WHERE id=?", (user["center_id"],),
+                        "SELECT id,name FROM centers WHERE id=? AND "
+                        "(account_type='health' OR ?='guardia1')",
+                        (user["center_id"], user["username"]),
                     ).fetchall()
                 ]
             else:
-                raise AccessError("Esta operación solo está disponible para administración y guardia1.")
+                raise AccessError(
+                    "Esta operación solo está disponible para administración, guardia1 y centro33.",
+                )
             visible_center_ids = {center["id"] for center in centers}
             professions = [
                 row["name"] for row in connection.execute(
                     "SELECT name FROM staffing_professions ORDER BY name COLLATE NOCASE",
+                ).fetchall()
+            ]
+            specialties = [
+                row["name"] for row in connection.execute(
+                    "SELECT name FROM staffing_specialties ORDER BY name COLLATE NOCASE",
                 ).fetchall()
             ]
             counts = {}
@@ -886,57 +934,121 @@ class Store:
                 counts.setdefault(row["center_id"], {})[
                     (row["quadro"], row["row_label"], row["column_key"])
                 ] = row["amount"]
-            return {"centers": centers, "professions": professions, "counts": counts}
+            selected_rows = {
+                center_id: {"professions": [], "specialties": []}
+                for center_id in visible_center_ids
+            }
+            for row in connection.execute(
+                "SELECT center_id,quadro,row_label FROM staffing_rows "
+                "WHERE quadro IN ('professions','specialties') "
+                "ORDER BY center_id,quadro,row_label",
+            ):
+                if row["center_id"] in selected_rows:
+                    selected_rows[row["center_id"]][row["quadro"]].append(row["row_label"])
+            return {
+                "centers": centers, "professions": professions,
+                "specialties": specialties, "counts": counts, "rows": selected_rows,
+            }
 
     def save_staffing_professions(self, token: str, professions) -> None:
-        if not isinstance(professions, (list, tuple)) or len(professions) > 100:
-            raise InventoryError("Ingresa hasta 100 profesiones, una por línea.")
+        self._save_staffing_options(
+            token, professions, "professions", "staffing_professions",
+        )
+
+    def save_staffing_specialties(self, token: str, specialties) -> None:
+        self._save_staffing_options(
+            token, specialties, "specialties", "staffing_specialties",
+        )
+
+    def _save_staffing_options(self, token, options, quadro, options_table) -> None:
+        if not isinstance(options, (list, tuple)) or len(options) > 100:
+            raise InventoryError("Ingresa hasta 100 opciones, una por línea.")
         cleaned = []
         seen = set()
         fixed_rows = {
             label.casefold()
-            for table in STAFFING_TABLES for label in table["rows"]
+            for table in STAFFING_TABLES
+            if table["key"] != quadro for label in table["rows"]
         }
-        for profession in professions:
-            if not isinstance(profession, str):
-                raise InventoryError("Cada profesión debe ser texto.")
-            name = profession.strip()
+        for option in options:
+            if not isinstance(option, str):
+                raise InventoryError("Cada opción debe ser texto.")
+            name = option.strip()
             if not name:
                 continue
             if len(name) > 100:
-                raise InventoryError("Cada profesión admite hasta 100 caracteres.")
+                raise InventoryError("Cada opción admite hasta 100 caracteres.")
             normalized = name.casefold()
             if normalized in seen or normalized in fixed_rows:
-                raise InventoryError(f"La profesión «{name}» está repetida.")
+                raise InventoryError(f"La opción «{name}» está repetida.")
             seen.add(normalized)
             cleaned.append(name)
         with self.transaction() as connection:
             self._actor(connection, token, admin=True)
             existing = {
                 row["name"] for row in connection.execute(
-                    "SELECT name FROM staffing_professions",
+                    f"SELECT name FROM {options_table}",
                 ).fetchall()
             }
-            connection.execute("DELETE FROM staffing_professions")
+            connection.execute(f"DELETE FROM {options_table}")
             connection.executemany(
-                "INSERT INTO staffing_professions(name) VALUES(?)",
+                f"INSERT INTO {options_table}(name) VALUES(?)",
                 [(name,) for name in cleaned],
             )
             removed = existing - set(cleaned)
             if removed:
-                connection.executemany(
-                    "DELETE FROM staffing_counts WHERE quadro='professions' AND row_label=?",
-                    [(name,) for name in removed],
+                connection.execute(
+                    "DELETE FROM staffing_rows WHERE quadro=? AND row_label IN "
+                    f"({','.join('?' for _ in removed)})",
+                    (quadro, *removed),
                 )
+                connection.executemany(
+                    "DELETE FROM staffing_counts WHERE quadro=? AND row_label=?",
+                    [(quadro, name) for name in removed],
+                )
+
+    def add_staffing_row(self, token: str, center_id: int, quadro: str, row_label: str) -> None:
+        if quadro not in ("professions", "specialties"):
+            raise InventoryError("Selecciona un cuadro válido.")
+        with self.transaction() as connection:
+            user = self._actor(connection, token)
+            if user["role"] != "admin" and (
+                user["role"] != "center" or user["username"] not in STAFFING_CAPTURE_USERS
+                or user["center_id"] != center_id
+            ):
+                raise AccessError(
+                    "Esta operación solo está disponible para administración, guardia1 y centro33.",
+                )
+            center = connection.execute(
+                "SELECT 1 FROM centers c WHERE c.id=? AND (c.account_type='health' "
+                "OR EXISTS (SELECT 1 FROM users u WHERE u.center_id=c.id "
+                "AND u.role='center' AND u.username='guardia1'))",
+                (center_id,),
+            ).fetchone()
+            if not center:
+                raise InventoryError("El centro de salud seleccionado no existe.")
+            options_table = (
+                "staffing_professions" if quadro == "professions" else "staffing_specialties"
+            )
+            if not connection.execute(
+                f"SELECT 1 FROM {options_table} WHERE name=?", (row_label,),
+            ).fetchone():
+                raise InventoryError("Selecciona una opción configurada por administración.")
+            connection.execute(
+                "INSERT OR IGNORE INTO staffing_rows(center_id,quadro,row_label) VALUES(?,?,?)",
+                (center_id, quadro, row_label),
+            )
 
     def save_staffing_counts(self, token: str, center_id: int, values: dict) -> None:
         with self.transaction() as connection:
             user = self._actor(connection, token)
             if user["role"] != "admin" and (
-                user["role"] != "center" or user["username"] != "guardia1"
+                user["role"] != "center" or user["username"] not in STAFFING_CAPTURE_USERS
                 or user["center_id"] != center_id
             ):
-                raise AccessError("Esta operación solo está disponible para administración y guardia1.")
+                raise AccessError(
+                    "Esta operación solo está disponible para administración, guardia1 y centro33.",
+                )
             if not connection.execute(
                 "SELECT 1 FROM centers c WHERE c.id=? AND (c.account_type='health' "
                 "OR EXISTS (SELECT 1 FROM users u WHERE u.center_id=c.id "
@@ -944,16 +1056,27 @@ class Store:
                 (center_id,),
             ).fetchone():
                 raise InventoryError("El centro de salud seleccionado no existe.")
-            professions = {
-                row["name"] for row in connection.execute(
-                    "SELECT name FROM staffing_professions",
-                ).fetchall()
+            selected_rows = {
+                quadro: {
+                    row["row_label"] for row in connection.execute(
+                        "SELECT row_label FROM staffing_rows WHERE center_id=? AND quadro=?",
+                        (center_id, quadro),
+                    )
+                }
+                for quadro in ("professions", "specialties")
             }
             rows_by_table = {
-                table["key"]: (*table["rows"], *professions)
-                if table["key"] == "professions" else table["rows"]
+                table["key"]: table["rows"]
                 for table in STAFFING_TABLES
             }
+            rows_by_table["professions"] = (
+                *next(table["rows"] for table in STAFFING_TABLES if table["key"] == "professions"),
+                *selected_rows["professions"],
+            )
+            rows_by_table["specialties"] = (
+                *next(table["rows"] for table in STAFFING_TABLES if table["key"] == "specialties"),
+                *selected_rows["specialties"],
+            )
             expected = {
                 (table["key"], row_label, column_key)
                 for table in STAFFING_TABLES
