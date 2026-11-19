@@ -245,6 +245,54 @@ class ReportTests(unittest.TestCase):
                 self.assertIn("SOPORTE BÁSICO", doc[0].get_text())
                 self.assertNotIn("MOTOS", doc[0].get_text())
 
+    def test_special_equipment_pdf_uses_requested_type_and_center_names(self):
+        self.populate(self.north)
+        self.populate(self.south)
+        with self.store.transaction() as connection:
+            for center in (self.north, self.south):
+                connection.execute(
+                    "INSERT INTO equipment_counts(center_id, category, kind, operational, unavailable) "
+                    "VALUES(?, 'Equipos médicos especiales', 'Resonador', 1, 0)",
+                    (center,),
+                )
+
+        for center_id, center_names, multiplier in (
+            (None, ("Centro Norte", "Centro Sur"), 2),
+            (self.north, ("Centro Norte",), 1),
+        ):
+            for kind, plural, pair in (
+                ("Tomógrafo", "TOMÓGRAFOS", (3, 2)),
+                ("Resonador", "RESONADORES", (1, 0)),
+            ):
+                with self.subTest(center=center_id, kind=kind), pymupdf.open(
+                    stream=generate_pdf(
+                        self.store, self.token, center_id,
+                        category="Equipos médicos especiales", kind=kind,
+                    ),
+                    filetype="pdf",
+                ) as document:
+                    text = " ".join(document[0].get_text().split())
+                    self.assertIn(
+                        f"EQUIPOS MÉDICOS ESPECIALES ({plural}) DE LA RED SANITARIA MILITAR.",
+                        text,
+                    )
+                    self.assertNotIn("SUMATORIA DE TODOS LOS CENTROS", text)
+                    self.assertNotIn("SUMA POR DESCRIPCIÓN:", text)
+                    for center_name in center_names:
+                        self.assertIn(center_name, text)
+                        self.assertNotIn(f"{center_name} /", text)
+                    words = document[0].get_text("words")
+                    total_label = "GENERAL" if center_id is None else "TOTAL"
+                    total = next(
+                        word for word in words
+                        if word[4] == total_label and word[1] > 260
+                    )
+                    actual = [
+                        int(word[4]) for word in words
+                        if word[0] > 331 and abs(word[1] - total[1]) < 1 and word[4].isdigit()
+                    ]
+                    self.assertEqual(actual, [value * multiplier for value in (*pair, sum(pair))])
+
     def test_named_laboratory_filter_excludes_other_special_labs_and_central(self):
         with self.store.transaction() as connection:
             for center, slot, name, state in (

@@ -33,6 +33,16 @@ SUMMARY_CATEGORIES = {
     "Equipos médicos especiales": (5, None),
     "Plantas eléctricas": (6, None),
 }
+SPECIAL_EQUIPMENT_TITLE_TYPES = {
+    "Máquina de anestesia": "MÁQUINAS DE ANESTESIA",
+    "Tomógrafo": "TOMÓGRAFOS",
+    "Resonador": "RESONADORES",
+    "Radiología": "RADIOLOGÍA",
+    "Ecógrafo": "ECÓGRAFOS",
+    "Arco en C": "ARCOS EN C",
+    "Silla odontológica": "SILLAS ODONTOLÓGICAS",
+    "Silla para diálisis": "SILLAS PARA DIÁLISIS",
+}
 
 
 def normalized(value):
@@ -266,7 +276,10 @@ def generate_pdf(
     if not data:
         raise InventoryError("No hay centros registrados para generar el informe.")
     signature = "CONSOLIDADO GENERAL - ADMINISTRACIÓN" if consolidated else f"DIRECTOR DEL {data[0][0]['name']}"
-    subtitle = "SUMATORIA DE TODOS LOS CENTROS" if consolidated else ""
+    subtitle = (
+        "SUMATORIA DE TODOS LOS CENTROS"
+        if consolidated and category != "Equipos médicos especiales" else ""
+    )
     title_suffix = (
         "DE TODOS LOS CENTROS DE SALUD" if consolidated
         else f"DEL {data[0][0]['name'].split(' - ', 1)[0].upper()}"
@@ -303,6 +316,14 @@ def generate_pdf(
                 if only is not None:
                     title = category.upper()
                     groups = LABORATORY_GROUPS if only == "Laboratorio" else (only,)
+                if category == "Equipos médicos especiales":
+                    equipment_title = (
+                        f" ({SPECIAL_EQUIPMENT_TITLE_TYPES[kind]})" if kind is not None else ""
+                    )
+                    title = (
+                        f"EQUIPOS MÉDICOS ESPECIALES{equipment_title} "
+                        "DE LA RED SANITARIA MILITAR."
+                    )
             if section == 4 and only != "Banco de sangre":
                 special_groups = tuple(dict.fromkeys(
                     kind for _, values in data for kind in values[4]
@@ -333,12 +354,16 @@ def generate_pdf(
                     for description, pair in sorted(equipment.items()):
                         if omit_empty and sum(pair) == 0:
                             continue
-                        label = f"{center['name']} / {description}" if consolidated else description
+                        label = (
+                            center["name"]
+                            if category == "Equipos médicos especiales"
+                            else f"{center['name']} / {description}" if consolidated else description
+                        )
                         rows.append((len(rows) + 1, label, pair, False))
                         totals = [left + right for left, right in zip(totals, pair)]
                         if consolidated:
                             descriptions[description] = [left + right for left, right in zip(descriptions[description], pair)]
-                if consolidated:
+                if consolidated and kind is None:
                     for description, pair in sorted(descriptions.items()):
                         rows.append(("", f"SUMA POR DESCRIPCIÓN: {description}", pair, True))
                 rows.append(("", "TOTAL GENERAL" if consolidated else "TOTAL", totals, True))
