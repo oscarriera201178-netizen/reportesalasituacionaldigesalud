@@ -722,6 +722,33 @@ class ReportTests(unittest.TestCase):
                     center = (span["bbox"][0] + span["bbox"][2]) / 2
                     self.assertAlmostEqual(center, 480, delta=1)
 
+    def test_vehicle_pdfs_do_not_show_subtitles(self):
+        self.populate(self.north)
+        self.populate(self.south)
+        for center_id in (self.north, None):
+            for category in (None, "Vehículos", "Todos los vehículos"):
+                with self.subTest(center=center_id, category=category), pymupdf.open(
+                    stream=generate_pdf(
+                        self.store, self.token, center_id, category=category,
+                    ),
+                    filetype="pdf",
+                ) as document:
+                    pages = (
+                        list(document)
+                        if category == "Todos los vehículos"
+                        else [
+                            page for page in document
+                            if "VEHÍCULOS PROTOCOLARES" in page.get_text()
+                        ]
+                    )
+                    self.assertTrue(pages)
+                    for page in pages:
+                        subtitle_words = [
+                            word for word in page.get_text("words")
+                            if 144 <= word[1] and word[3] <= 180
+                        ]
+                        self.assertEqual(subtitle_words, [])
+
     def test_center_pdf_matches_six_sections_and_director_name(self):
         self.populate(self.north)
         data = generate_pdf(self.store, self.token, self.north)

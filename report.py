@@ -414,7 +414,7 @@ def generate_pdf(
                 if consolidated:
                     rows.append(("", "TOTAL GENERAL", totals, True))
                 _table(
-                    doc, f"{title} {vehicle_title_suffix}", groups, rows, subtitle, timestamp,
+                    doc, f"{title} {vehicle_title_suffix}", groups, rows, "", timestamp,
                     omit_empty=omit_empty, title_align=1,
                 )
             return doc.tobytes(garbage=4, deflate=True)
@@ -517,9 +517,11 @@ def generate_pdf(
             )
             table_subtitle = (
                 ""
-                if not consolidated and (
-                    category in CENTER_INVENTORY_CATEGORIES
-                    or (category is None and section in (0, 3, 4, 5, 6))
+                if section == 2 or (
+                    not consolidated and (
+                        category in CENTER_INVENTORY_CATEGORIES
+                        or (category is None and section in (0, 3, 4, 5, 6))
+                    )
                 )
                 else subtitle
             )
