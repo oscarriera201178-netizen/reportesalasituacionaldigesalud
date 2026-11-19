@@ -6,8 +6,8 @@ import unicodedata
 import pymupdf
 
 from store import (
-    AMBULANCE_TYPES, BED_TYPES, InventoryError, REPORT_TIMEZONE, SPECIAL_EQUIPMENT_TYPES,
-    MILITARY_COMPONENTS, THEATRE_TYPES, VEHICLE_GROUPS, VEHICLE_TYPES,
+    AMBULANCE_TYPES, BED_TYPES, InventoryError, LEGACY_BED_TYPES, REPORT_TIMEZONE, SPECIAL_EQUIPMENT_TYPES,
+    MILITARY_COMPONENTS, THEATRE_TYPES, VEHICLE_GROUPS, VEHICLE_TYPES, canonical_bed_type,
 )
 
 
@@ -67,9 +67,28 @@ def normalized(value):
 
 def counts(inventory):
     result = [{} for _ in SECTIONS]
+    legacy_beds = defaultdict(lambda: [0, 0])
+    current_beds = defaultdict(lambda: [0, 0])
+    bed_types = {normalized(kind): kind for kind in BED_TYPES}
+    legacy_bed_types = {
+        normalized(old_kind): new_kind
+        for old_kind, new_kind in LEGACY_BED_TYPES.items()
+    }
     for row in inventory["quantities"]:
         if row["category"] == "Camas":
-            section, options = 0, BED_TYPES
+            row_kind = normalized(row["kind"])
+            if row_kind in bed_types:
+                target = current_beds[bed_types[row_kind]]
+            elif row_kind in legacy_bed_types:
+                target = legacy_beds[legacy_bed_types[row_kind]]
+            else:
+                raise InventoryError(
+                    f"El tipo «{row['kind']}» no corresponde al cuadro modelo. "
+                    "Actualiza ese registro antes de generar el PDF."
+                )
+            target[0] += row["operational"]
+            target[1] += row["unavailable"]
+            continue
         elif row["category"] == "Vehículos" and normalized(row["kind"]) in {normalized(kind) for kind in AMBULANCE_TYPES}:
             section, options = 1, AMBULANCE_TYPES
         else:
@@ -84,6 +103,11 @@ def counts(inventory):
         pair = result[section].setdefault(kind, [0, 0])
         pair[0] += row["operational"]
         pair[1] += row["unavailable"]
+    for kind in BED_TYPES:
+        if kind in current_beds:
+            result[0][kind] = current_beds[kind]
+        elif kind in legacy_beds:
+            result[0][kind] = legacy_beds[kind]
     for row in inventory.get("facility_counts", []):
         category = row["category"]
         if category == "Banco de sangre":
@@ -161,6 +185,8 @@ def report_types(data, category, *, vehicle_group=None):
 
 
 def center_summary(data, category, *, kind=None, vehicle_group=None):
+    if category == "Camas hospitalarias" and kind is not None:
+        kind = canonical_bed_type(kind)
     if category == "Todos los vehículos":
         columns = [
             (1 if group == "Ambulancias" else 2, option)
@@ -364,6 +390,8 @@ def generate_pdf(
     if category is None and (kind is not None or vehicle_group is not None):
         raise InventoryError("Selecciona una categoría para filtrar el informe.")
     if category is not None:
+        if category == "Camas hospitalarias" and kind is not None:
+            kind = canonical_bed_type(kind)
         options = report_types(data, category, vehicle_group=vehicle_group)
         if kind is not None and kind not in options:
             raise InventoryError("Tipo de informe no válido para la categoría seleccionada.")

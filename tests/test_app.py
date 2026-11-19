@@ -406,7 +406,7 @@ class AppTests(unittest.TestCase):
         app.session_state["token"] = token
         app.run()
         for category, expected_titles, pages in (
-            ("Camas", ("CAMAS HOSPITALARIAS",), 1),
+            ("Camas", ("CAMAS HOSPITALARIAS",), 2),
             ("Vehículos", (
                 "AMBULANCIAS", "VEHÍCULOS PROTOCOLARES",
                 "CARGA PESADA (CAMIONES Y GANDOLAS)",
@@ -476,8 +476,9 @@ class AppTests(unittest.TestCase):
             self.assertEqual(operational.proto.format, "%02d")
         app.number_input(key=f"category_operational_{center_id}_Camas_0").set_value(10).run()
         app.number_input(key=f"category_unavailable_{center_id}_Camas_0").set_value(2).run()
-        app.number_input(key=f"category_operational_{center_id}_Camas_5").set_value(5).run()
-        app.number_input(key=f"category_unavailable_{center_id}_Camas_5").set_value(1).run()
+        uci_index = BED_TYPES.index("Cama de UCI")
+        app.number_input(key=f"category_operational_{center_id}_Camas_{uci_index}").set_value(5).run()
+        app.number_input(key=f"category_unavailable_{center_id}_Camas_{uci_index}").set_value(1).run()
         self.assertFalse(app.exception)
         displayed = [item.value for item in app.markdown]
         self.assertIn("12", displayed)
@@ -499,8 +500,8 @@ class AppTests(unittest.TestCase):
             if row["category"] == "Camas"
         }
         self.assertEqual(set(beds), set(BED_TYPES))
-        self.assertEqual(beds["Hospitalización"], (10, 2))
-        self.assertEqual(beds["UCI"], (5, 1))
+        self.assertEqual(beds["Cama de Hosp. Adultos"], (10, 2))
+        self.assertEqual(beds["Cama de UCI"], (5, 1))
         self.assertEqual(self.store.missing_inventory_categories(token, center_id), [])
         self.assertFalse(self.store.submission(token, center_id)["loaded"])
         self.assertTrue(self.store.submission(token, center_id)["editable"])
@@ -512,8 +513,43 @@ class AppTests(unittest.TestCase):
             if row["category"] == "Camas"
         ]
         self.assertEqual(len(beds), len(BED_TYPES))
-        self.assertEqual(next(row["operational"] for row in beds if row["kind"] == "Hospitalización"), 0)
+        self.assertEqual(next(row["operational"] for row in beds if row["kind"] == "Cama de Hosp. Adultos"), 0)
         self.assertFalse(self.store.submission(token, center_id)["loaded"])
+
+    def test_existing_bed_values_display_under_new_names_without_being_rewritten(self):
+        self.store.bootstrap("admin", PASSWORD)
+        admin = self.store.login("admin", PASSWORD)
+        self.store.create_center(admin, "Centro Norte", "Norte", "norte", TEMPORARY)
+        token = self.store.login("norte", TEMPORARY)
+        center_id = self.store.centers(token)[0]["id"]
+        self.store.save_quantity(token, center_id, "Camas", "Hospitalización", 10, 2)
+        self.store.save_quantity(token, center_id, "Camas", "UCI", 5, 1)
+
+        app = AppTest.from_file(APP, default_timeout=30)
+        app.session_state["token"] = token
+        app.run()
+        self.assertFalse(app.exception)
+        adult_index = BED_TYPES.index("Cama de Hosp. Adultos")
+        uci_index = BED_TYPES.index("Cama de UCI")
+        self.assertEqual(
+            app.number_input(
+                key=f"category_operational_{center_id}_Camas_{adult_index}",
+            ).value,
+            10,
+        )
+        self.assertEqual(
+            app.number_input(
+                key=f"category_operational_{center_id}_Camas_{uci_index}",
+            ).value,
+            5,
+        )
+        saved_beds = {
+            row["kind"]: row for row in self.store.inventory(token, center_id)["quantities"]
+            if row["category"] == "Camas"
+        }
+        self.assertEqual(saved_beds["Hospitalización"]["operational"], 10)
+        self.assertEqual(saved_beds["UCI"]["operational"], 5)
+        self.assertNotIn("Cama de Hosp. Adultos", saved_beds)
 
     def test_blood_bank_presence_and_state_save_without_submission(self):
         self.store.bootstrap("admin", PASSWORD)
@@ -574,8 +610,9 @@ class AppTests(unittest.TestCase):
         with pymupdf.open(
             stream=app.session_state[f"_pdf_export_{center_id}"]["data"], filetype="pdf",
         ) as document:
-            self.assertEqual(len(document), 1)
+            self.assertEqual(len(document), 2)
             self.assertIn("CAMAS HOSPITALARIAS", document[0].get_text())
+            self.assertIn("CAMAS HOSPITALARIAS", document[1].get_text())
         app.button(key="inventory_category_Banco de sangre").click().run()
         self.assertEqual(len(app.get("download_button")), 1)
         app.button(key=f"edit_section_{center_id}_Banco de sangre").click().run()
@@ -1142,15 +1179,16 @@ class AppTests(unittest.TestCase):
             self.assertEqual(app.button(key="inventory_category_Camas").label, "**CAMAS HOSPITALARIAS**")
             app.run()
             self.assertEqual(len(app.get("download_button")), 1)
-            app.number_input(key=f"category_operational_{center_id}_Camas_5").set_value(3)
-            app.number_input(key=f"category_unavailable_{center_id}_Camas_5").set_value(1)
+            uci_index = BED_TYPES.index("Cama de UCI")
+            app.number_input(key=f"category_operational_{center_id}_Camas_{uci_index}").set_value(3)
+            app.number_input(key=f"category_unavailable_{center_id}_Camas_{uci_index}").set_value(1)
             self.confirm_load(app, f"load_beds_{center_id}")
             self.assertFalse(app.exception)
             self.assertEqual(len(app.get("download_button")), 1)
             updated = app.session_state[f"_pdf_export_{center_id}"]
             uci = next(
                 row for row in updated["snapshot"][0][1]["quantities"]
-                if row["kind"] == "UCI"
+                if row["kind"] == "Cama de UCI"
             )
             self.assertEqual((uci["operational"], uci["unavailable"]), (3, 1))
             app.run()
@@ -1174,7 +1212,7 @@ class AppTests(unittest.TestCase):
             self.assertFalse(app.exception)
             table = app.dataframe[0].value
             self.assertEqual(
-                table[table["Tipo"] == "UCI"]["Total"].iloc[0], 4,
+                table[table["Tipo"] == "Cama de UCI"]["Total"].iloc[0], 4,
                 "El administrador debe ver en el resumen lo cargado por el centro.",
             )
             self.assertTrue(any(
@@ -1211,7 +1249,7 @@ class AppTests(unittest.TestCase):
         app.button(key="inventory_category_Camas").click().run()
         self.assertFalse(app.exception)
         table = app.dataframe[0].value
-        self.assertEqual(table[table["Tipo"] == "UCI"]["Total"].iloc[0], 9)
+        self.assertEqual(table[table["Tipo"] == "Cama de UCI"]["Total"].iloc[0], 9)
         self.assertEqual(table[table["Tipo"] == "TOTAL"]["Operativas"].iloc[0], 6)
         app.selectbox(key="summary_center").select(north).run()
         table = app.dataframe[0].value
@@ -1361,7 +1399,9 @@ class AppTests(unittest.TestCase):
                     else:
                         self.assertTrue(any(message.value == NO_REPORT_UNITS for message in app.info))
                     with pymupdf.open(stream=app.session_state[export_key]["data"], filetype="pdf") as doc:
-                        self.assertEqual(len(doc), 5 if category == "Vehículos" else 1)
+                        self.assertEqual(
+                            len(doc), 5 if category == "Vehículos" else 2 if category == "Camas" else 1,
+                        )
                         text = "\n".join(page.get_text() for page in doc)
                         self.assertIn(title, text)
                         self.assertEqual("Centro Norte" in text, has_units or center_id == north)
@@ -1585,13 +1625,14 @@ class AppTests(unittest.TestCase):
         self.assertFalse(any(button.key == "generate_pdf_all" for button in app.button))
         self.assertFalse(any(button.key == "submit_inventory" for button in app.button))
         center_id = self.store.centers(token)[0]["id"]
-        app.number_input(key=f"category_operational_{center_id}_Camas_5").set_value(5)
-        app.number_input(key=f"category_unavailable_{center_id}_Camas_5").set_value(2)
+        uci_index = BED_TYPES.index("Cama de UCI")
+        app.number_input(key=f"category_operational_{center_id}_Camas_{uci_index}").set_value(5)
+        app.number_input(key=f"category_unavailable_{center_id}_Camas_{uci_index}").set_value(2)
         self.confirm_load(app, f"load_beds_{center_id}")
         self.assertFalse(app.exception)
         self.assertFalse(app.metric)
         bed_rows = self.store.inventory(token, center_id)["quantities"]
-        uci = next(row for row in bed_rows if row["kind"] == "UCI")
+        uci = next(row for row in bed_rows if row["kind"] == "Cama de UCI")
         self.assertEqual(uci["operational"] + uci["unavailable"], 7)
         app.button(key="inventory_category_Banco de sangre").click().run()
         blood_bank_heading = next(

@@ -464,12 +464,42 @@ class HtmlApplicationTests(unittest.TestCase):
         token = self.store.login("norte", CENTER_PASSWORD)
         rows = self.store.inventory(token, self.center["id"])["quantities"]
         loaded_beds = {row["kind"]: row for row in rows if row["category"] == "Camas"}
-        self.assertEqual(loaded_beds["Hospitalización"]["operational"], 1)
-        self.assertEqual(loaded_beds["Observación"]["unavailable"], 1)
+        self.assertEqual(loaded_beds["Cama de Hosp. Adultos"]["operational"], 1)
+        self.assertEqual(loaded_beds["Cama de Observación"]["unavailable"], 2)
         self.assertTrue(self.store.section_loads(token, self.center["id"])["Camas"])
         page = self.client.get(f"/inventory/{self.center['id']}?section=Camas")
         self.assertEqual(page.status_code, 200)
         self.assertIn(b"Editar secci", page.data)
+
+    def test_existing_bed_records_are_shown_with_new_names_without_rewriting_them(self):
+        self.login("norte", CENTER_PASSWORD)
+        token = self.store.login("norte", CENTER_PASSWORD)
+        legacy = {
+            "Hospitalización": (10, 2),
+            "Observación": (3, 1),
+            "Trauma shock": (4, 0),
+            "UTIA": (5, 0),
+            "UTIP": (6, 0),
+            "UCI": (7, 0),
+        }
+        for kind, values in legacy.items():
+            self.store.save_quantity(token, self.center["id"], "Camas", kind, *values)
+
+        response = self.client.get(f"/inventory/{self.center['id']}?section=Camas")
+        self.assertEqual(response.status_code, 200)
+        for kind in BED_TYPES:
+            self.assertIn(kind.encode(), response.data)
+        self.assertNotIn(b"Hospitalizaci\xc3\xb3n", response.data)
+        self.assertIn(b'name="qty_0_operational" value="10"', response.data)
+
+        saved = self.store.inventory(token, self.center["id"])["quantities"]
+        saved_beds = {row["kind"]: row for row in saved if row["category"] == "Camas"}
+        self.assertEqual(
+            {kind: (saved_beds[kind]["operational"], saved_beds[kind]["unavailable"]) for kind in legacy},
+            legacy,
+        )
+        self.assertNotIn("Cama de Hosp. Adultos", saved_beds)
+        self.assertEqual(self.store.summary(self.admin_token)[0]["Camas"], 38)
 
     def test_facility_details_follow_presence_and_remain_disabled_when_locked(self):
         self.login("norte", CENTER_PASSWORD)

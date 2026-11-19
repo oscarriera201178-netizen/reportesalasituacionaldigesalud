@@ -156,7 +156,7 @@ class StoreTests(unittest.TestCase):
         with self.assertRaises(InventoryError):
             self.store.submit(self.center, self.north, require_all_categories=True, require_loaded_sections=True)
         values = {kind: (0, 0) for kind in BED_TYPES}
-        values["UCI"] = (4, 2)
+        values[BED_TYPES[-1]] = (4, 2)
         self.store.load_section(self.center, self.north, "Camas", values)
         self.store.initialize_empty_items(self.center, self.north)
         self.assertEqual(self.store.summary(self.admin)[0]["Camas"], 6)
@@ -404,7 +404,7 @@ class StoreTests(unittest.TestCase):
 
     def test_save_category_quantities_is_atomic_and_does_not_submit(self):
         values = {kind: (0, 0) for kind in BED_TYPES}
-        values["UCI"] = (5, 2)
+        values[BED_TYPES[-1]] = (5, 2)
         self.store.save_category_quantities(self.center, self.north, "Camas", values)
         restored = Store(self.store.path)
         rows = restored.inventory(self.center, self.north)["quantities"]
@@ -415,11 +415,11 @@ class StoreTests(unittest.TestCase):
         )
         self.assertFalse(restored.submission(self.center, self.north)["loaded"])
         for invalid in (
-            {"UCI": (1, 0)},
-            {**values, "UCI": (-1, 0)},
-            {**values, "UCI": (1.5, 0)},
-            {**values, "UCI": (1_000_001, 0)},
-            {**values, "UCI": (True, 0)},
+            {BED_TYPES[-1]: (1, 0)},
+            {**values, BED_TYPES[-1]: (-1, 0)},
+            {**values, BED_TYPES[-1]: (1.5, 0)},
+            {**values, BED_TYPES[-1]: (1_000_001, 0)},
+            {**values, BED_TYPES[-1]: (True, 0)},
             {**values, "Desconocido": (1, 0)},
         ):
             with self.subTest(invalid=invalid), self.assertRaises(InventoryError):
@@ -564,7 +564,7 @@ class StoreTests(unittest.TestCase):
             restored.edit_section(self.admin, self.north, "Camas")
         restored.edit_section(self.center, self.north, "Camas")
         self.assertFalse(restored.section_loads(self.center, self.north)["Camas"])
-        values["UCI"] = (4, 1)
+        values[BED_TYPES[-1]] = (4, 1)
         restored.load_section(self.center, self.north, "Camas", values)
         for section in REPORT_SECTIONS:
             if section == "Camas":

@@ -20,12 +20,12 @@ from report import (
 )
 from database import DATABASE_ERRORS
 from store import (
-    AccessError, BED_TYPES, InventoryError, INVENTORY_QUANTITIES, MILITARY_CAUSES,
+    AccessError, BED_TYPES, InventoryError, INVENTORY_QUANTITIES, LEGACY_BED_TYPES, MILITARY_CAUSES,
     MILITARY_COMPONENTS, MILITARY_GRADES, MILITARY_REDI,
     DELETE_ALL_INVENTORY_CONFIRMATION,
     REPORT_LOADED, REPORT_SECTIONS, REPORT_TIMEZONE, load_center_catalog,
-    SPECIAL_EQUIPMENT_TYPES, STATES, Store, VEHICLE_GROUPS,
-    TRAFFIC_TYPES, TRAFFIC_CONDITIONS, TRAFFIC_ROLES, weekly_status,
+    SPECIAL_EQUIPMENT_TYPES, STATES, Store, VEHICLE_GROUPS, bed_quantity_rows,
+    TRAFFIC_TYPES, TRAFFIC_CONDITIONS, TRAFFIC_ROLES, canonical_bed_type, weekly_status,
 )
 
 
@@ -259,6 +259,8 @@ def create_app(store=None, *, secret_key=None):
         data = report_data(store_obj, auth_token, center_id)
         options = report_types(data, report_category, vehicle_group=vehicle_group)
         kind = request.args.get("kind") or None
+        if report_category == "Camas hospitalarias" and kind is not None:
+            kind = canonical_bed_type(kind)
         if kind not in options:
             kind = None
         rows = summary_rows(data, report_category, kind=kind, vehicle_group=vehicle_group)
@@ -790,7 +792,7 @@ def create_app(store=None, *, secret_key=None):
         special_labs = data["special_laboratories"]
         if category == "Camas":
             source = [r for r in data["quantities"] if r["category"] == "Camas"]
-            rows = quantity_rows(BED_TYPES, source)
+            rows = bed_quantity_rows(source)
         elif category == "Vehículos":
             source = [r for r in data["quantities"] if r["category"] == "Vehículos"]
             kinds = [kind for group in VEHICLE_GROUPS.values() for kind in group]
@@ -895,7 +897,12 @@ def create_app(store=None, *, secret_key=None):
         if category == "Camas":
             kinds = list(BED_TYPES)
             source = existing["quantities"]
-            kinds.extend(row["kind"] for row in source if row["category"] == category and row["kind"] not in kinds)
+            kinds.extend(
+                row["kind"] for row in source
+                if row["category"] == category
+                and row["kind"] not in kinds
+                and row["kind"] not in LEGACY_BED_TYPES
+            )
         elif category == "Vehículos":
             kinds = [kind for group in VEHICLE_GROUPS.values() for kind in group]
             source = existing["quantities"]

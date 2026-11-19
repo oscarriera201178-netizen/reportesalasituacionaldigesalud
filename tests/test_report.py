@@ -241,7 +241,7 @@ class ReportTests(unittest.TestCase):
         self.populate(self.south)
         for center_id in (None, self.north):
             for category, kind, expected, excluded in (
-                ("Camas hospitalarias", "UCI", "UCI", "Hospitalización"),
+                ("Camas hospitalarias", "UCI", "CAMA DE UCI", "CAMA DE HOSP. ADULTOS"),
                 ("Todos los vehículos", "Soporte básico", "Soporte básico", "Motos"),
                 ("Bancos de sangre", "Banco de sangre", "Banco de sangre", "Central"),
                 ("Laboratorios", "Central", "Central", "Emergencia"),
@@ -504,7 +504,7 @@ class ReportTests(unittest.TestCase):
     def test_all_six_sections_have_exact_counts_and_normalized_equipment(self):
         self.populate(self.north)
         values = report_data(self.store, self.token, self.north)[0][1]
-        self.assertEqual(values[0], {"UCI": [5, 2]})
+        self.assertEqual(values[0], {"Cama de UCI": [5, 2]})
         self.assertEqual(values[1], {"Soporte básico": [3, 1]})
         self.assertEqual(values[2], {"Motos": [4, 2]})
         self.assertEqual(values[3], {"En pisos": [1, 0], "En emergencias": [0, 1]})
@@ -753,7 +753,7 @@ class ReportTests(unittest.TestCase):
         self.populate(self.north)
         data = generate_pdf(self.store, self.token, self.north)
         with pymupdf.open(stream=data, filetype="pdf") as doc:
-            self.assertEqual(len(doc), 7)
+            self.assertEqual(len(doc), 8)
             for page in doc:
                 self.assertEqual((page.rect.width, page.rect.height), (960, 540))
                 text = page.get_text()
@@ -763,25 +763,25 @@ class ReportTests(unittest.TestCase):
                 self.assertNotIn("CONSOLIDADO GENERAL - ADMINISTRACIÓN", text)
                 self.assertNotIn("Centro Sur", text)
                 self.assertIn("FUENTE: Sala Situacional/DIGESALUD", text)
-            self.assertIn("UCI", doc[0].get_text())
-            self.assertIn("Tomógrafo", doc[5].get_text())
-            self.assertNotIn("monitor", doc[5].get_text())
+            self.assertIn("CAMA DE UCI", doc[1].get_text())
+            self.assertIn("Tomógrafo", doc[6].get_text())
+            self.assertNotIn("monitor", doc[6].get_text())
 
     def test_consolidated_totals_include_every_center_once(self):
         self.populate(self.north)
         self.populate(self.south)
         data = report_data(self.store, self.token)
-        self.assertEqual(sum(values[0].get("UCI", [0, 0])[0] for _, values in data), 10)
+        self.assertEqual(sum(values[0].get("Cama de UCI", [0, 0])[0] for _, values in data), 10)
         with pymupdf.open(stream=generate_pdf(self.store, self.token), filetype="pdf") as doc:
-            self.assertEqual(len(doc), 7)
+            self.assertEqual(len(doc), 8)
             for index, page in enumerate(doc):
                 self.assertIn("VICESALUDBSS", page.get_text())
-                self.assertEqual("Centro Norte" in page.get_text(), index != 6)
-                self.assertEqual("Centro Sur" in page.get_text(), index != 6)
+                self.assertEqual("Centro Norte" in page.get_text(), index not in (0, 7))
+                self.assertEqual("Centro Sur" in page.get_text(), index not in (0, 7))
                 self.assertIn("TOTAL GENERAL", page.get_text())
-            self.assertIn("SUMA POR DESCRIPCIÓN: Tomógrafo", doc[5].get_text())
-            # UCI OPE, UCI INOP, total for the TOTAL GENERAL row.
-            words = doc[0].get_text("words")
+            self.assertIn("SUMA POR DESCRIPCIÓN: Tomógrafo", doc[6].get_text())
+            # Cama de UCI OPE, INOP and total for the TOTAL GENERAL row.
+            words = doc[1].get_text("words")
             total_word = next(word for word in words if word[4] == "GENERAL")
             numbers = [word[4] for word in words if abs(word[1] - total_word[1]) < 1 and word[0] > 331]
             self.assertEqual(numbers[-3:], ["10", "4", "14"])
@@ -794,6 +794,29 @@ class ReportTests(unittest.TestCase):
             counts({"quantities": [], "facilities": [{
                 "category": "Quirófano", "name": "Q1", "kind": "General", "state": "Operativo",
             }], "equipment": []})
+
+    def test_legacy_bed_names_are_reported_as_new_types_without_double_counting(self):
+        self.store.save_quantity(
+            self.token, self.north, "Camas", "Hospitalización", 10, 2,
+        )
+        values = report_data(self.store, self.token, self.north)[0][1][0]
+        self.assertEqual(values["Cama de Hosp. Adultos"], [10, 2])
+
+        self.store.save_quantity(
+            self.token, self.north, "Camas", "Cama de Hosp. Adultos", 7, 1,
+        )
+        values = report_data(self.store, self.token, self.north)[0][1][0]
+        self.assertEqual(values["Cama de Hosp. Adultos"], [7, 1])
+        with pymupdf.open(
+            stream=generate_pdf(
+                self.store, self.token, self.north,
+                category="Camas hospitalarias", kind="Hospitalización",
+            ),
+            filetype="pdf",
+        ) as document:
+            text = document[0].get_text()
+            self.assertIn("CAMA DE HOSP. ADULTOS", text)
+            self.assertNotIn("HOSPITALIZACIÓN", text)
 
     def test_filtered_blood_bank_and_laboratory_pdfs_keep_separate_counts(self):
         self.populate(self.north)
@@ -921,7 +944,7 @@ class ReportTests(unittest.TestCase):
         with pymupdf.open(stream=generate_pdf(store, token), filetype="pdf") as doc:
             self.assertGreater(len(doc), 20)
             text = "\n".join(page.get_text() for page in doc)
-            self.assertEqual(text.count("TOTAL GENERAL"), 7)
+            self.assertEqual(text.count("TOTAL GENERAL"), 8)
             self.assertEqual(text.count("SUMA POR DESCRIPCIÓN:"), 20)
             for page in doc:
                 for word in page.get_text("words"):

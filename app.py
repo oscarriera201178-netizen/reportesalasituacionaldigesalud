@@ -19,9 +19,9 @@ from report import (
     NO_REPORT_UNITS, SUMMARY_CATEGORIES, center_summary, generate_pdf, report_data, report_types,
 )
 from store import (
-    AccessError, InventoryError,
+    AccessError, InventoryError, bed_quantity_rows,
     INVENTORY_QUANTITIES, REPORT_LOADED, REPORT_PENDING, REPORT_TIMEZONE, STATES,
-    weekly_status,
+    canonical_bed_type, weekly_status,
     SPECIAL_EQUIPMENT_TYPES, VEHICLE_GROUPS, Store, load_center_catalog,
 )
 
@@ -575,7 +575,9 @@ def quantity_panel(
         else facility_rows
     )
     if category == "Camas":
-        table_rows = [row for row in table_rows if row["category"] == "Camas"]
+        table_rows = bed_quantity_rows(
+            row for row in table_rows if row["category"] == "Camas"
+        )
     elif category in ("Ambulancias", "Vehículos protocolares"):
         is_ambulance = category == "Ambulancias"
         ambulance_types = set(INVENTORY_QUANTITIES["Ambulancias"])
@@ -728,6 +730,8 @@ def submission_panel(store, token, center_id):
 
 
 def category_summary(store, token, center_id, category, *, kind=None, vehicle_group=None):
+    if category == "Camas hospitalarias" and kind is not None:
+        kind = canonical_bed_type(kind)
     data = report_data(store, token, center_id)
     options = report_types(data, category, vehicle_group=vehicle_group)
     if kind is not None and kind not in options:

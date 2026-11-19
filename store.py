@@ -21,7 +21,24 @@ from database import (
 
 QUANTITY_CATEGORIES = ("Camas", "Vehículos")
 AMBULANCE_TYPES = ("Soporte básico", "Soporte avanzado", "Tácticas")
-BED_TYPES = ("Hospitalización", "Observación", "Trauma shock", "UTIA", "UTIP", "UCI")
+BED_TYPES = (
+    "Cama de Hosp. Adultos", "Cama de Hosp. Pediátricas", "Cama de Observación",
+    "Cama de Trauma Shock", "Cama de UTIA", "Cama de UTIP", "Cama de UCI",
+)
+LEGACY_BED_TYPES = {
+    "Hospitalización": "Cama de Hosp. Adultos",
+    "Observación": "Cama de Observación",
+    "Trauma shock": "Cama de Trauma Shock",
+    "UTIA": "Cama de UTIA",
+    "UTIP": "Cama de UTIP",
+    "UCI": "Cama de UCI",
+}
+
+
+def canonical_bed_type(kind):
+    return LEGACY_BED_TYPES.get(kind, kind)
+
+
 VEHICLE_TYPES = (
     "Carros / camionetas", "Carga pesada (camiones y gandolas)",
     "Transporte de personal (autobús, van y minivan)", "Motos",
@@ -87,6 +104,32 @@ INVENTORY_QUANTITIES = {
     "Quirófano": THEATRE_TYPES,
     "Plantas eléctricas": ("Plantas eléctricas",),
 }
+
+
+def bed_quantity_rows(source):
+    source = list(source)
+    values = {row["kind"]: row for row in source}
+    rows = []
+    for kind in BED_TYPES:
+        row = values.get(kind)
+        if row is None:
+            legacy = [
+                values[old_kind] for old_kind, new_kind in LEGACY_BED_TYPES.items()
+                if new_kind == kind and old_kind in values
+            ]
+            operational = sum(item["operational"] for item in legacy)
+            unavailable = sum(item["unavailable"] for item in legacy)
+        else:
+            operational = row["operational"]
+            unavailable = row["unavailable"]
+        rows.append({
+            "kind": kind, "operational": operational, "unavailable": unavailable,
+        })
+    rows.extend(
+        row for row in source
+        if row["kind"] not in BED_TYPES and row["kind"] not in LEGACY_BED_TYPES
+    )
+    return rows
 STATES = ("Operativo", "Fuera de servicio")
 IDLE_SECONDS = 30 * 60
 SESSION_SECONDS = 8 * 60 * 60
@@ -1132,7 +1175,24 @@ class Store:
                 FROM centers c
                 LEFT JOIN (
                     SELECT center_id,
-                        SUM(CASE WHEN category='Camas'
+                        SUM(CASE WHEN category='Camas' AND (
+                            kind NOT IN (
+                                'Hospitalización', 'Observación', 'Trauma shock',
+                                'UTIA', 'UTIP', 'UCI'
+                            ) OR NOT EXISTS (
+                                SELECT 1 FROM quantities current_bed
+                                WHERE current_bed.center_id=quantities.center_id
+                                    AND current_bed.category='Camas'
+                                    AND current_bed.kind=CASE quantities.kind
+                                        WHEN 'Hospitalización' THEN 'Cama de Hosp. Adultos'
+                                        WHEN 'Observación' THEN 'Cama de Observación'
+                                        WHEN 'Trauma shock' THEN 'Cama de Trauma Shock'
+                                        WHEN 'UTIA' THEN 'Cama de UTIA'
+                                        WHEN 'UTIP' THEN 'Cama de UTIP'
+                                        WHEN 'UCI' THEN 'Cama de UCI'
+                                    END
+                            )
+                        )
                             THEN operational + unavailable ELSE 0 END) AS beds,
                         SUM(CASE WHEN category='Vehículos'
                             THEN operational + unavailable ELSE 0 END) AS vehicles
@@ -1464,7 +1524,20 @@ class Store:
                     (center_id, section, weekly_status(0, now)["period_start"]),
                 )
                 table, kinds = self._section_quantity_types(section)
+                existing_kinds = set()
+                if section == "Camas":
+                    existing_kinds = {
+                        row["kind"] for row in connection.execute(
+                            "SELECT kind FROM quantities WHERE center_id=? AND category='Camas'",
+                            (center_id,),
+                        )
+                    }
                 for kind in kinds:
+                    if section == "Camas" and any(
+                        old_kind in existing_kinds and new_kind == kind
+                        for old_kind, new_kind in LEGACY_BED_TYPES.items()
+                    ):
+                        continue
                     connection.execute(
                         f"INSERT OR IGNORE INTO {table}(center_id, category, kind, operational, unavailable) "
                         "VALUES(?, ?, ?, 0, 0)",

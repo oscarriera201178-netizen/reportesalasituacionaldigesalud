@@ -94,12 +94,14 @@ mostrar el texto completo.
   consultar secciones guardadas, sin habilitar cambios en secciones bloqueadas.
 - En la vista del centro, **CAMAS HOSPITALARIAS** aparece en negrita y
   mayúsculas, dentro de un cuadro con fondo verde del color primario del tema
-  y letras blancas. Su cuadro permite cargar Hospitalización, Observación, Trauma
-  shock, UTIA, UTIP y UCI, con columnas de **Operativas**, **Inoperativas**
+  y letras blancas. Su cuadro permite cargar Cama de Hosp. Adultos, Cama de Hosp.
+  Pediátricas, Cama de Observación, Cama de Trauma Shock, Cama de UTIA, Cama de
+  UTIP y Cama de UCI, con columnas de **Operativas**, **Inoperativas**
   y **Total**. Los totales por tipo y el total general se actualizan al cambiar
-  las cantidades, antes de guardar. **Cargar datos** guarda todas las camas
-  sin enviar el inventario semanal; permite seguir editándolas mientras el
-  período esté abierto y no se haya enviado el inventario.
+  las cantidades, antes de guardar. Los registros anteriores se conservan sin
+  cambios y se muestran bajo su nueva denominación. **Cargar datos** guarda
+  todas las camas sin enviar el inventario semanal; permite seguir editándolas
+  mientras el período esté abierto y no se haya enviado el inventario.
 - El único botón **VEHÍCULOS** reúne cinco grupos: **Ambulancias** (soporte
   básico, soporte avanzado y tácticas), **Vehículos protocolares**
   (carros/camionetas), **Carga pesada (camiones y gandolas)**,
@@ -599,7 +601,8 @@ datos personales de salud.
 
 Los formularios usan los tipos del modelo entregado:
 
-- Camas: hospitalización, observación, trauma shock, UTIA, UTIP y UCI.
+- Camas: Cama de Hosp. Adultos, Cama de Hosp. Pediátricas, Cama de Observación,
+  Cama de Trauma Shock, Cama de UTIA, Cama de UTIP y Cama de UCI.
 - Ambulancias: soporte básico, soporte avanzado y tácticas.
 - Vehículos protocolares: carros/camionetas, carga pesada/autobús y motos.
 - Quirófanos: cantidades operativas y fuera de servicio en pisos y en emergencias.
