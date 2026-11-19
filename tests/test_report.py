@@ -13,6 +13,16 @@ from store import AccessError, InventoryError, REPORT_PENDING, REPORT_TIMEZONE, 
 PASSWORD = "Test-report-password-123"
 
 
+def pdf_title_sizes(page):
+    return [
+        span["size"]
+        for block in page.get_text("dict")["blocks"]
+        for line in block.get("lines", [])
+        for span in line["spans"]
+        if 100 <= span["bbox"][1] < 205 and span["size"] >= 15
+    ]
+
+
 class MilitaryReportLayoutTests(unittest.TestCase):
     def test_components_without_records_are_omitted_and_empty_results_are_reported(self):
         record = {
@@ -86,6 +96,33 @@ class MilitaryReportLayoutTests(unittest.TestCase):
                 for key in keys:
                     expected = " ".join(record[key].split())
                     self.assertEqual(text.count(expected), 16, key)
+
+    def test_military_pdf_titles_keep_one_font_size_and_wrap_long_components(self):
+        record = {
+            "component": "Componente de nombre muy extenso " * 7,
+            "grade": "TTE", "full_name": "PERSONA DE PRUEBA",
+            "cedula": "V-12345678", "birth_date": "1990-01-01",
+            "age": 36, "death_date": "2026-10-15", "cause": "Muerte natural",
+            "redi": "REDI Capital", "zodi": "ZODI CAPITAL", "unit": "UNIDAD DE PRUEBA",
+            "center_name": "CENTRO DE SALUD DE PRUEBA",
+            "attention_date": "2026-10-15", "accident_type": "Bicicleta",
+            "patient_condition": "Politraumatismo", "traffic_role": "Pasajero",
+        }
+        for options in (
+            {}, {"health_registry": True}, {"traffic_registry": True},
+            {"component_traffic_registry": True},
+        ):
+            with self.subTest(options=options), pymupdf.open(
+                stream=generate_military_pdf([record], **options), filetype="pdf",
+            ) as document:
+                sizes = [
+                    size for page in document for size in pdf_title_sizes(page)
+                ]
+                self.assertTrue(sizes)
+                self.assertEqual(set(sizes), {16.0})
+                self.assertIn(
+                    "PERSONA DE PRUEBA", " ".join(document[0].get_text().split()),
+                )
 
 
 class ReportTests(unittest.TestCase):
@@ -531,8 +568,11 @@ class ReportTests(unittest.TestCase):
                 ) as doc:
                     for page in doc:
                         title = " ".join(
-                            word[4] for word in page.get_text("words")
-                            if 109.99 <= word[1] and word[3] <= 138.01
+                            " ".join(span["text"].split())
+                            for block in page.get_text("dict")["blocks"]
+                            for line in block.get("lines", [])
+                            for span in line["spans"]
+                            if span["size"] == 16.0
                         )
                         if category == "Equipos médicos especiales":
                             self.assertEqual(
@@ -557,6 +597,22 @@ class ReportTests(unittest.TestCase):
                 "CAMAS HOSPITALARIAS DE TODOS LOS CENTROS DE SALUD",
                 " ".join(doc[0].get_text().split()),
             )
+
+    def test_inventory_pdf_titles_use_one_font_size_in_every_report(self):
+        self.populate(self.north)
+        for center_id in (self.north, None):
+            for category in (None, *SUMMARY_CATEGORIES, "Todos los vehículos"):
+                with self.subTest(center=center_id, category=category), pymupdf.open(
+                    stream=generate_pdf(
+                        self.store, self.token, center_id, category=category,
+                    ),
+                    filetype="pdf",
+                ) as document:
+                    sizes = [
+                        size for page in document for size in pdf_title_sizes(page)
+                    ]
+                    self.assertTrue(sizes)
+                    self.assertEqual(set(sizes), {16.0})
 
     def test_center_pdf_matches_six_sections_and_director_name(self):
         self.populate(self.north)

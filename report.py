@@ -14,6 +14,8 @@ from store import (
 QUANTITY_TYPES = {"Camas": BED_TYPES, "Ambulancias": AMBULANCE_TYPES, "Vehículos protocolares": VEHICLE_TYPES}
 LABORATORY_GROUPS = ("Central", "Emergencia", "Laboratorios especiales")
 NO_REPORT_UNITS = "No hay centros con unidades registradas para estos filtros."
+TITLE_FONT_SIZE = 16
+TITLE_LINE_HEIGHT = 28
 SECTIONS = (
     ("CAMAS HOSPITALARIAS", BED_TYPES),
     ("AMBULANCIAS", AMBULANCE_TYPES),
@@ -185,6 +187,43 @@ def _text(page, rectangle, text, size=9, bold=False, align=1):
     raise InventoryError(f"No se pudo ajustar el texto del PDF: {str(text)[:60]}")
 
 
+def _title_lines(rectangle, text):
+    rectangle = pymupdf.Rect(rectangle)
+    font = pymupdf.Font("hebo")
+    lines = []
+    for word in str(text).split():
+        candidate = f"{lines[-1]} {word}" if lines else word
+        if font.text_length(candidate, fontsize=TITLE_FONT_SIZE) <= rectangle.width:
+            if lines:
+                lines[-1] = candidate
+            else:
+                lines.append(candidate)
+        elif font.text_length(word, fontsize=TITLE_FONT_SIZE) <= rectangle.width:
+            lines.append(word)
+        else:
+            raise InventoryError("El título del PDF contiene una palabra demasiado larga.")
+    if not lines:
+        raise InventoryError("El título del PDF no puede estar vacío.")
+    return lines
+
+
+def _title(page, rectangle, text):
+    rectangle = pymupdf.Rect(rectangle)
+    lines = _title_lines(rectangle, text)
+    title_rect = pymupdf.Rect(
+        rectangle.x0, rectangle.y0, rectangle.x1,
+        rectangle.y0 + TITLE_LINE_HEIGHT * len(lines),
+    )
+    shape = page.new_shape()
+    spare = shape.insert_textbox(
+        title_rect, "\n".join(lines), fontsize=TITLE_FONT_SIZE, fontname="hebo",
+    )
+    if spare < 0:
+        raise InventoryError("No se pudo ajustar el título del PDF.")
+    shape.commit()
+    return TITLE_LINE_HEIGHT * len(lines)
+
+
 def _cell(page, x, y, width, height, text, *, bold=False, size=9):
     rect = pymupdf.Rect(x, y, x + width, y + height)
     page.draw_rect(rect, color=(0.2, 0.25, 0.28), width=0.5)
@@ -246,7 +285,20 @@ def _table(doc, title, groups, rows, subtitle, timestamp, *, omit_empty=False):
     first_width, number_width = 265, 30
     unit = (888 - first_width - number_width) / numeric
     # Repeat complete headings and totals across pages without splitting a row.
-    chunks = [rows[start:start + 5] for start in range(0, len(rows), 5)] or [[]]
+    title_height = TITLE_LINE_HEIGHT * len(
+        _title_lines(pymupdf.Rect(36, 110, 924, 500), title.rstrip("."))
+    )
+    title_offset = title_height - TITLE_LINE_HEIGHT
+    table_y = 205 + title_offset
+    rows_per_page = min(5, (490 - table_y - 60) // 32)
+    if table_y + 60 > 490:
+        raise InventoryError("El título del PDF no deja espacio para la tabla.")
+    if rows and rows_per_page < 1:
+        raise InventoryError("El título del PDF no deja espacio para la tabla.")
+    chunks = [
+        rows[start:start + rows_per_page]
+        for start in range(0, len(rows), rows_per_page)
+    ] if rows else [[]]
     for part, chunk in enumerate(chunks, 1):
         page = doc.new_page(width=960, height=540)
         with pymupdf.open(Path(__file__).with_name("cintillo.pdf")) as banner:
@@ -254,12 +306,18 @@ def _table(doc, title, groups, rows, subtitle, timestamp, *, omit_empty=False):
                 pymupdf.Rect(36, 8, 924, 96), banner, 0,
                 clip=pymupdf.Rect(0, 0, 960, 95),
             )
-        _text(page, pymupdf.Rect(36, 110, 924, 138), title.rstrip("."), 18, True)
+        _title(page, pymupdf.Rect(36, 110, 924, 500), title.rstrip("."))
         if subtitle:
-            _text(page, pymupdf.Rect(36, 144, 924, 180), subtitle, 11)
+            _text(
+                page, pymupdf.Rect(36, 144 + title_offset, 924, 180 + title_offset),
+                subtitle, 11,
+            )
         if no_units:
-            _text(page, pymupdf.Rect(36, 182, 924, 204), NO_REPORT_UNITS, 10)
-        y = 205
+            _text(
+                page, pymupdf.Rect(36, 182 + title_offset, 924, 204 + title_offset),
+                NO_REPORT_UNITS, 10,
+            )
+        y = table_y
         _cell(page, 36, y, number_width, 60, "N.º", bold=True)
         _cell(page, 66, y, first_width, 60, "CENTRO / DESCRIPCIÓN", bold=True)
         x = 66 + first_width
@@ -547,8 +605,12 @@ def generate_military_pdf(
                     title = "Militares Fallecidos en Centros de Salud"
                 else:
                     title = f"Registro de Militares Fallecidos en el Componente {name}"
-                _text(page, pymupdf.Rect(28, 104, 932, 135), title.rstrip("."), 16, True)
-                x, y = left, 145
+                title_height = _title(
+                    page, pymupdf.Rect(28, 104, 932, 460), title.rstrip("."),
+                )
+                x, y = left, 104 + title_height + 13
+                if y + 61 > 482:
+                    raise InventoryError("El título del PDF no deja espacio para la tabla.")
                 for header, width in zip(headers, widths):
                     _cell(page, x, y, width, 31, header, bold=True, size=7)
                     x += width
