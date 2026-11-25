@@ -25,7 +25,7 @@ se obtiene de los centros registrados, inicialmente 34.
 Aplicación web HTML adaptable a móvil y computadora, con servidor Flask en
 Python y almacenamiento independiente de Residencias. No consulta ni modifica
 las bases de datos de Residencias. La interfaz principal se ejecuta desde
-`webapp.py`; `app.py` se conserva como versión Streamlit anterior.
+`webapp.py`.
 Todos los botones muestran sus títulos en mayúsculas y negrita, incluidos
 categorías, formularios, carga, envío y descargas PDF.
 El botón **CAMAS HOSPITALARIAS** permite varias líneas y ajusta su altura para
@@ -677,10 +677,9 @@ Las pruebas utilizan bases temporales, sin tocar datos reales:
 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Incluyen pruebas del HTML/Flask y compatibilidad de la interfaz anterior,
-aislamiento entre centros, intentos con identificadores ajenos, permisos,
-caducidad y revocación de sesiones, creación y edición atómicas, más de 35 centros y flujos
-de acceso y registro con `streamlit.testing.v1.AppTest`.
+Incluyen pruebas del HTML/Flask, aislamiento entre centros, intentos con
+identificadores ajenos, permisos, caducidad y revocación de sesiones,
+creación y edición atómicas y más de 35 centros.
 Una prueba recorre individualmente los 34 centros del catálogo y sus siete ítems:
 verifica encabezados y configuración comunes, PDF exclusivo del centro e ítem,
 bloqueo de envío hasta cargar todas las secciones, confirmación final y
