@@ -410,6 +410,8 @@ class Store:
                 );
                 CREATE TABLE IF NOT EXISTS birth_records (
                     center_id INTEGER PRIMARY KEY REFERENCES centers(id),
+                    period_month INTEGER NOT NULL DEFAULT 1 CHECK(period_month BETWEEN 1 AND 12),
+                    period_year INTEGER NOT NULL DEFAULT 2026 CHECK(period_year BETWEEN 2020 AND 2100),
                     natural_military INTEGER NOT NULL CHECK(natural_military >= 0),
                     natural_affiliated INTEGER NOT NULL CHECK(natural_affiliated >= 0),
                     natural_pna INTEGER NOT NULL CHECK(natural_pna >= 0),
@@ -465,6 +467,15 @@ class Store:
             if "attention_center" not in connection.table_columns("traffic_records"):
                 connection.execute(
                     "ALTER TABLE traffic_records ADD COLUMN attention_center TEXT NOT NULL DEFAULT ''",
+                )
+            birth_columns = set(connection.table_columns("birth_records"))
+            if "period_month" not in birth_columns:
+                connection.execute(
+                    "ALTER TABLE birth_records ADD COLUMN period_month INTEGER NOT NULL DEFAULT 1",
+                )
+            if "period_year" not in birth_columns:
+                connection.execute(
+                    "ALTER TABLE birth_records ADD COLUMN period_year INTEGER NOT NULL DEFAULT 2026",
                 )
             columns = set(connection.table_columns("centers"))
             if "assigned_username" not in columns:
@@ -1396,6 +1407,8 @@ class Store:
             self._actor(connection, token, admin=True)
             rows = connection.execute("""
                 SELECT c.id AS "N°", c.name AS "Centro",
+                    COALESCE(b.period_month, 0) AS "Mes",
+                    COALESCE(b.period_year, 0) AS "Año",
                     COALESCE(b.natural_military, 0) AS "Natural militar",
                     COALESCE(b.natural_affiliated, 0) AS "Natural afiliado",
                     COALESCE(b.natural_pna, 0) AS "Natural PNA",
@@ -1414,13 +1427,21 @@ class Store:
 
     def save_birth_records(self, token: str, center_id: int, values: dict) -> None:
         fields = (
+            "period_month", "period_year",
             "natural_military", "natural_affiliated", "natural_pna",
             "cesarean_military", "cesarean_affiliated", "cesarean_pna",
         )
         if not isinstance(values, dict) or set(values) != set(fields):
             raise InventoryError("Completa los seis campos del registro de partos.")
+        month = values.get("period_month")
+        year = values.get("period_year")
+        if type(month) is not int or not 1 <= month <= 12:
+            raise InventoryError("Selecciona un mes válido entre enero y diciembre.")
+        if type(year) is not int or not 2020 <= year <= 2100:
+            raise InventoryError("Ingresa un año válido entre 2020 y 2100.")
+        quantity_fields = tuple(field for field in fields if field not in ("period_month", "period_year"))
         if any(type(values[field]) is not int or values[field] < 0 or values[field] > 1_000_000
-               for field in fields):
+               for field in quantity_fields):
             raise InventoryError("Las cantidades deben ser enteros entre 0 y 1.000.000.")
         with self.transaction() as connection:
             user = self._actor(connection, token)
@@ -1431,10 +1452,13 @@ class Store:
             self._require_weekly_load(connection, center_id, now)
             connection.execute("""
                 INSERT INTO birth_records(
-                    center_id, natural_military, natural_affiliated, natural_pna,
+                    center_id, period_month, period_year,
+                    natural_military, natural_affiliated, natural_pna,
                     cesarean_military, cesarean_affiliated, cesarean_pna
-                ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(center_id) DO UPDATE SET
+                    period_month=excluded.period_month,
+                    period_year=excluded.period_year,
                     natural_military=excluded.natural_military,
                     natural_affiliated=excluded.natural_affiliated,
                     natural_pna=excluded.natural_pna,
@@ -1442,7 +1466,7 @@ class Store:
                     cesarean_affiliated=excluded.cesarean_affiliated,
                     cesarean_pna=excluded.cesarean_pna
             """, (
-                center_id, *(values[field] for field in fields),
+                center_id, month, year, *(values[field] for field in quantity_fields),
             ))
             connection.execute("UPDATE centers SET changed_at=? WHERE id=?", (now, center_id))
 

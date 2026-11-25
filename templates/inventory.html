@@ -28,6 +28,18 @@
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="section" value="{{ category }}">
       <input type="hidden" name="action" value="load">
+      <div class="form-grid">
+        <label>Mes
+          <select name="period_month" required {% if not editable %}disabled{% endif %}>
+            {% for number, name in ((1,"Enero"),(2,"Febrero"),(3,"Marzo"),(4,"Abril"),(5,"Mayo"),(6,"Junio"),(7,"Julio"),(8,"Agosto"),(9,"Septiembre"),(10,"Octubre"),(11,"Noviembre"),(12,"Diciembre")) %}
+              <option value="{{ number }}" {% if birth_record and birth_record.period_month == number %}selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <label>Año
+          <input type="number" name="period_year" min="2020" max="2100" value="{{ birth_record.period_year if birth_record else 2026 }}" required {% if not editable %}disabled{% endif %}>
+        </label>
+      </div>
       <div class="table-wrap">
         <table>
           <thead><tr><th>Paciente</th><th>Parto natural</th><th>Cesárea</th></tr></thead>

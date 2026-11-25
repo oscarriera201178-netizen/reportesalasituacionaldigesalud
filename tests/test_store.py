@@ -1395,6 +1395,8 @@ class StoreTests(unittest.TestCase):
 
     def test_birth_records_persist_and_consolidate_by_center(self):
         values = {
+            "period_month": 11,
+            "period_year": 2026,
             "natural_military": 2,
             "natural_affiliated": 3,
             "natural_pna": 1,

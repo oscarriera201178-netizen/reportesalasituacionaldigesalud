@@ -882,10 +882,14 @@ def create_app(store=None, *, secret_key=None):
             flash(REPORT_LOADED, "success")
         elif action == "load" and section == "Registro de partos atendidos":
             fields = (
+                "period_month", "period_year",
                 "natural_military", "natural_affiliated", "natural_pna",
                 "cesarean_military", "cesarean_affiliated", "cesarean_pna",
             )
-            values = {field: parse_integer(request.form.get(field, "")) for field in fields}
+            values = {
+                field: parse_count(request.form, field)
+                for field in fields
+            }
             store_obj.save_birth_records(token(), center_id, values)
             flash("Registro de partos guardado.", "success")
         elif action == "load":
