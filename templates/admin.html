@@ -49,12 +49,21 @@
       </select>
     </label>
   </form>
+  {% if category == "Registro de partos atendidos" %}
+  <div class="table-wrap">
+    <table>
+      <thead><tr>{% for key in birth_rows[0] %}<th>{{ key }}</th>{% endfor %}</tr></thead>
+      <tbody>{% for row in birth_rows %}<tr>{% for value in row.values() %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
+    </table>
+  </div>
+  {% else %}
   <div class="table-wrap">
     <table>
       <thead><tr>{% for key in rows[0] %}<th>{{ key }}</th>{% endfor %}</tr></thead>
       <tbody>{% for row in rows %}<tr class="{% if row.Tipo == 'TOTAL' %}total-row{% endif %}">{% for value in row.values() %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody>
     </table>
   </div>
+  {% endif %}
   <h3>Detalle por centro de salud</h3>
   {% if center_rows %}
     <div class="table-wrap">

@@ -22,6 +22,31 @@
 {% endif %}
 <section class="panel">
   <h2>{{ categories[category]|upper }}</h2>
+  {% if category == "Registro de partos atendidos" %}
+    <p>Información de partos atendidos en este centro de salud.</p>
+    <form method="post" action="{{ url_for('save_inventory', center_id=center.id) }}" class="inventory-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="section" value="{{ category }}">
+      <input type="hidden" name="action" value="load">
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Paciente</th><th>Parto natural</th><th>Cesárea</th></tr></thead>
+          <tbody>
+            {% for patient, field in (("MILITAR", "military"), ("AFILIADO", "affiliated"), ("PNA", "pna")) %}
+            <tr>
+              <th>{{ patient }}</th>
+              <td><input type="number" min="0" max="1000000" name="natural_{{ field }}" value="{{ birth_record.natural_military if patient == 'MILITAR' and birth_record else (birth_record.natural_affiliated if patient == 'AFILIADO' and birth_record else (birth_record.natural_pna if birth_record else 0)) }}" required {% if not editable %}disabled{% endif %}></td>
+              <td><input type="number" min="0" max="1000000" name="cesarean_{{ field }}" value="{{ birth_record.cesarean_military if patient == 'MILITAR' and birth_record else (birth_record.cesarean_affiliated if patient == 'AFILIADO' and birth_record else (birth_record.cesarean_pna if birth_record else 0)) }}" required {% if not editable %}disabled{% endif %}></td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {% if editable %}
+        <button class="button button-primary" type="submit" onclick="return confirm('¿Ha editado todos los campos? Confirma para guardar esta sección.')">Cargar datos</button>
+      {% endif %}
+    </form>
+  {% else %}
   {% if vehicle_history %}
     <details class="history-panel"><summary>Historial de vehículos sin asignar</summary>
       <p>Estos registros no se asignan automáticamente ni se suman al inventario actual.</p>
@@ -141,6 +166,7 @@
     {% for item in presence_items %}
       <p><strong>{{ item.label }}:</strong> {{ "Sí" if item.has else "No" }}</p>
     {% endfor %}
+  {% endif %}
   {% endif %}
   {% if not editable and rows %}
     <p class="notice notice-info">Esta sección está en modo de consulta. Usa Editar para habilitar cambios antes de enviar.</p>

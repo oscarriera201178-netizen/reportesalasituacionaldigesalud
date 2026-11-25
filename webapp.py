@@ -39,6 +39,7 @@ REPORT_CATEGORIES = {
     "Quirófano": "Quirófanos",
     "Equipos médicos especiales": "Equipos médicos especiales",
     "Plantas eléctricas": "Plantas eléctricas",
+    "Registro de partos atendidos": "Registro de partos atendidos",
 }
 SECTION_LABELS = {
     "Camas": "Camas hospitalarias",
@@ -263,8 +264,15 @@ def create_app(store=None, *, secret_key=None):
             kind = canonical_bed_type(kind)
         if kind not in options:
             kind = None
-        rows = summary_rows(data, report_category, kind=kind, vehicle_group=vehicle_group)
-        center_rows = center_summary(data, report_category, kind=kind, vehicle_group=vehicle_group)
+        if category == "Registro de partos atendidos":
+            birth_rows = store_obj.birth_records_summary(auth_token)
+            rows = birth_rows
+            center_rows = birth_rows
+            options = []
+        else:
+            birth_rows = []
+            rows = summary_rows(data, report_category, kind=kind, vehicle_group=vehicle_group)
+            center_rows = center_summary(data, report_category, kind=kind, vehicle_group=vehicle_group)
         reported = sum(row["Estado"] == REPORT_LOADED for row in summary)
         return render_template(
             "admin.html", centers=centers, summary=summary,
@@ -273,7 +281,7 @@ def create_app(store=None, *, secret_key=None):
             categories=REPORT_CATEGORIES, category=category,
             report_category=report_category, center_id=selected_center,
             vehicle_group=vehicle_group, vehicle_groups=VEHICLE_GROUPS,
-            options=options, kind=kind, reported=reported,
+            options=options, kind=kind, reported=reported, birth_rows=birth_rows,
             report_loaded=REPORT_LOADED,
             period_week=period.isocalendar().week,
             period_start=period.strftime("%d/%m/%Y"),
@@ -741,7 +749,7 @@ def create_app(store=None, *, secret_key=None):
             category = "Camas"
         loaded = store_obj.section_loads(token(), center_id)
         submission = store_obj.submission(token(), center_id)
-        editable = submission["editable"] and not loaded[category]
+        editable = submission["editable"] and not loaded.get(category, False)
         rows, presence_items, special_labs = inventory_form_data(
             category, inventory_data,
         )
@@ -758,7 +766,8 @@ def create_app(store=None, *, secret_key=None):
         return render_template(
             "inventory.html", center=centers[0], categories=REPORT_CATEGORIES,
             category=category, rows=rows, presence_items=presence_items,
-            special_labs=special_labs, loaded=loaded[category],
+            birth_record=inventory_data["birth_record"],
+            special_labs=special_labs, loaded=loaded.get(category, False),
             editable=editable, status=status, missing=missing,
             vehicle_groups=VEHICLE_GROUPS, states=STATES,
             vehicle_kinds=[kind for group in VEHICLE_GROUPS.values() for kind in group],
@@ -858,7 +867,7 @@ def create_app(store=None, *, secret_key=None):
             return current or redirect(url_for("login"))
         if section is None:
             section = request.form.get("section", "")
-        if section not in REPORT_SECTIONS:
+        if section not in (*REPORT_SECTIONS, "Registro de partos atendidos"):
             abort(404)
         store_obj = get_store()
         action = request.form.get("action", "load")
@@ -871,6 +880,14 @@ def create_app(store=None, *, secret_key=None):
                 require_loaded_sections=True,
             )
             flash(REPORT_LOADED, "success")
+        elif action == "load" and section == "Registro de partos atendidos":
+            fields = (
+                "natural_military", "natural_affiliated", "natural_pna",
+                "cesarean_military", "cesarean_affiliated", "cesarean_pna",
+            )
+            values = {field: parse_integer(request.form.get(field, "")) for field in fields}
+            store_obj.save_birth_records(token(), center_id, values)
+            flash("Registro de partos guardado.", "success")
         elif action == "load":
             quantities = parse_quantities(request.form, section, store_obj, token(), center_id)
             if section == "Laboratorio":
