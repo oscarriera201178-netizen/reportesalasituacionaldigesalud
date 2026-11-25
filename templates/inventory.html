@@ -41,21 +41,27 @@
         </label>
         <label>Semana
           <select name="period_week" required {% if not editable %}disabled{% endif %}>
-            {% for week in range(1, 6) %}<option value="{{ week }}">Semana {{ week }}</option>{% endfor %}
+            {% for week in range(1, 6) %}<option value="{{ week }}" {% if birth_week == week %}selected{% endif %}>Semana {{ week }}</option>{% endfor %}
           </select>
         </label>
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Paciente</th><th>Parto natural</th><th>Cesárea</th></tr></thead>
+          <thead>
+            <tr><th rowspan="2">NRO</th><th rowspan="2">CENTROS DE SALUD</th><th colspan="3">NATURAL</th><th colspan="3">CESÁREA</th><th rowspan="2">TOTAL</th></tr>
+            <tr><th>MILITAR</th><th>AFILIADO</th><th>PNA</th><th>MILITAR</th><th>AFILIADO</th><th>PNA</th></tr>
+          </thead>
           <tbody>
-            {% for patient, field in (("MILITAR", "military"), ("AFILIADO", "affiliated"), ("PNA", "pna")) %}
             <tr>
-              <th>{{ patient }}</th>
-              <td><input type="number" min="0" max="1000000" name="natural_{{ field }}" value="{{ birth_record.natural_military if patient == 'MILITAR' and birth_record else (birth_record.natural_affiliated if patient == 'AFILIADO' and birth_record else (birth_record.natural_pna if birth_record else 0)) }}" required {% if not editable %}disabled{% endif %}></td>
-              <td><input type="number" min="0" max="1000000" name="cesarean_{{ field }}" value="{{ birth_record.cesarean_military if patient == 'MILITAR' and birth_record else (birth_record.cesarean_affiliated if patient == 'AFILIADO' and birth_record else (birth_record.cesarean_pna if birth_record else 0)) }}" required {% if not editable %}disabled{% endif %}></td>
+              <td>01</td><th>{{ center.name|upper }}</th>
+              <td><input type="number" min="0" max="1000000" name="natural_military" value="{{ birth_record.natural_military if birth_record else 0 }}" required {% if not editable %}disabled{% endif %}></td>
+              <td><input type="number" min="0" max="1000000" name="natural_affiliated" value="{{ birth_record.natural_affiliated if birth_record else 0 }}" required {% if not editable %}disabled{% endif %}></td>
+              <td><input type="number" min="0" max="1000000" name="natural_pna" value="{{ birth_record.natural_pna if birth_record else 0 }}" required {% if not editable %}disabled{% endif %}></td>
+              <td><input type="number" min="0" max="1000000" name="cesarean_military" value="{{ birth_record.cesarean_military if birth_record else 0 }}" required {% if not editable %}disabled{% endif %}></td>
+              <td><input type="number" min="0" max="1000000" name="cesarean_affiliated" value="{{ birth_record.cesarean_affiliated if birth_record else 0 }}" required {% if not editable %}disabled{% endif %}></td>
+              <td><input type="number" min="0" max="1000000" name="cesarean_pna" value="{{ birth_record.cesarean_pna if birth_record else 0 }}" required {% if not editable %}disabled{% endif %}></td>
+              <td data-birth-total>0</td>
             </tr>
-            {% endfor %}
           </tbody>
         </table>
       </div>

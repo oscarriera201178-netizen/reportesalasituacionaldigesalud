@@ -754,6 +754,7 @@ def create_app(store=None, *, secret_key=None):
         category = request.args.get("section", "Camas")
         birth_year = int(request.args.get("birth_year", datetime.now(REPORT_TIMEZONE).year))
         birth_month = int(request.args.get("birth_month", datetime.now(REPORT_TIMEZONE).month))
+        birth_week = int(request.args.get("birth_week", 1))
         if category not in REPORT_CATEGORIES:
             category = "Camas"
         loaded = store_obj.section_loads(token(), center_id)
@@ -775,10 +776,10 @@ def create_app(store=None, *, secret_key=None):
         return render_template(
             "inventory.html", center=centers[0], categories=REPORT_CATEGORIES,
             category=category, rows=rows, presence_items=presence_items,
-            birth_record=inventory_data["birth_record"],
+            birth_record=store_obj.birth_record(token(), center_id, birth_year, birth_month, birth_week),
             special_labs=special_labs, loaded=loaded.get(category, False),
             birth_week_records=store_obj.birth_week_records(token(), center_id, birth_year, birth_month) if category == "Registro de partos atendidos" else [],
-            birth_year=birth_year, birth_month=birth_month,
+            birth_year=birth_year, birth_month=birth_month, birth_week=birth_week,
             editable=editable, status=status, missing=missing,
             vehicle_groups=VEHICLE_GROUPS, states=STATES,
             vehicle_kinds=[kind for group in VEHICLE_GROUPS.values() for kind in group],
