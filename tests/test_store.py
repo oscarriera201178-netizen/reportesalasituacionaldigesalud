@@ -1393,6 +1393,28 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(center["name"], "Centro anterior")
         self.assertEqual(center["assigned_username"], "")
 
+    def test_birth_records_persist_and_consolidate_by_center(self):
+        values = {
+            "natural_military": 2,
+            "natural_affiliated": 3,
+            "natural_pna": 1,
+            "cesarean_military": 4,
+            "cesarean_affiliated": 5,
+            "cesarean_pna": 6,
+        }
+        with self.assertRaises(AccessError):
+            self.store.save_birth_records(self.admin, self.north, values)
+        with self.assertRaises(InventoryError):
+            self.store.save_birth_records(self.center, self.north, {**values, "natural_pna": -1})
+        self.store.save_birth_records(self.center, self.north, values)
+        self.assertEqual(self.store.birth_record(self.center, self.north)["natural_pna"], 1)
+        summary = self.store.birth_records_summary(self.admin)
+        north = next(row for row in summary if row["N°"] == self.north)
+        self.assertEqual(north["Natural PNA"], 1)
+        self.assertEqual(north["Total"], 21)
+        south = next(row for row in summary if row["N°"] == self.south)
+        self.assertEqual(south["Total"], 0)
+
 
 if __name__ == "__main__":
     unittest.main()

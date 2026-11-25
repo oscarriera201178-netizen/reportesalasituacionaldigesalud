@@ -650,6 +650,66 @@ def quantity_panel(
                     st.rerun()
 
 
+def birth_record_panel(store, token, center_id, record, *, editable=True):
+    inventory_heading("REGISTRO DE PARTOS ATENDIDOS EN CENTROS DE SALUD", centered=True)
+    st.caption("Información de partos atendidos en este centro de salud.")
+    fields = (
+        ("natural_military", "NATURAL", "MILITAR"),
+        ("natural_affiliated", "NATURAL", "AFILIADO"),
+        ("natural_pna", "NATURAL", "PNA"),
+        ("cesarean_military", "CESÁREA", "MILITAR"),
+        ("cesarean_affiliated", "CESÁREA", "AFILIADO"),
+        ("cesarean_pna", "CESÁREA", "PNA"),
+    )
+    record = record or {}
+    values = {}
+    with st.container(border=True):
+        columns = st.columns(3)
+        columns[0].markdown("**TIPO DE PARTO**")
+        columns[1].markdown("**NATURAL**")
+        columns[2].markdown("**CESÁREA**")
+        for patient_type in ("MILITAR", "AFILIADO", "PNA"):
+            row_columns = st.columns(3)
+            row_columns[0].write(patient_type)
+            natural_field = f"natural_{patient_type.lower()}"
+            cesarean_field = f"cesarean_{patient_type.lower()}"
+            if editable:
+                natural = row_columns[1].number_input(
+                    f"Natural - {patient_type}", min_value=0, max_value=1_000_000,
+                    value=int(record.get(natural_field, 0)), format="%02d",
+                    key=f"birth_natural_{patient_type}_{center_id}", on_change=inventory_changed,
+                )
+                cesarean = row_columns[2].number_input(
+                    f"Cesárea - {patient_type}", min_value=0, max_value=1_000_000,
+                    value=int(record.get(cesarean_field, 0)), format="%02d",
+                    key=f"birth_cesarean_{patient_type}_{center_id}", on_change=inventory_changed,
+                )
+            else:
+                natural = int(record.get(natural_field, 0))
+                cesarean = int(record.get(cesarean_field, 0))
+                row_columns[1].write(f"{natural:02d}")
+                row_columns[2].write(f"{cesarean:02d}")
+            values[natural_field] = natural
+            values[cesarean_field] = cesarean
+        st.divider()
+        total_columns = st.columns(3)
+        natural_total = sum(values[field] for field in (
+            "natural_military", "natural_affiliated", "natural_pna",
+        ))
+        cesarean_total = sum(values[field] for field in (
+            "cesarean_military", "cesarean_affiliated", "cesarean_pna",
+        ))
+        total_columns[0].markdown("**TOTAL**")
+        total_columns[1].markdown(f"**{natural_total:02d}**")
+        total_columns[2].markdown(f"**{cesarean_total:02d}**")
+        general = st.columns(1)[0]
+        general.markdown(f"**TOTAL GENERAL: {natural_total + cesarean_total:02d}**")
+    if editable:
+        st.caption("Cargar datos guarda el registro sin enviar el inventario semanal.")
+        if confirm_load_button(f"load_birth_records_{center_id}"):
+            save(store.save_birth_records, token, center_id, values)
+
+
 def equipment_panel(store, token, center_id, rows, *, editable=True, history=()):
     inventory_heading("EQUIPOS MÉDICOS ESPECIALES", centered=True)
     if history:
@@ -811,12 +871,21 @@ REPORT_CATEGORIES = {
     "Quirófano": "Quirófanos",
     "Equipos médicos especiales": "Equipos médicos especiales",
     "Plantas eléctricas": "Plantas eléctricas",
+    "Registro de partos atendidos": "Registro de partos atendidos",
 }
 
 
 def admin_reports(store, token, centers):
     inventory_buttons()
     category = REPORT_CATEGORIES[st.session_state["inventory_category"]]
+    if category == "Registro de partos atendidos":
+        inventory_heading("CONSOLIDADO DE PARTOS ATENDIDOS")
+        rows = store.birth_records_summary(token)
+        if rows:
+            st.dataframe(rows, width="stretch", hide_index=True)
+        else:
+            st.info("No hay centros registrados.")
+        return
     inventory_heading(st.session_state["inventory_category"].upper())
     by_id = {center["id"]: center for center in centers}
     selection = st.selectbox(
@@ -878,7 +947,8 @@ def center_view(store, token, center_id):
     selected_category = st.session_state["inventory_category"]
     if selected_category not in REPORT_CATEGORIES:
         raise InventoryError("Categoría de inventario no válida. Selecciona uno de los ítems disponibles.")
-    loaded = store.section_loads(token, center_id)[selected_category]
+    section_loads = store.section_loads(token, center_id)
+    loaded = section_loads.get(selected_category, False)
     if loaded and editable:
         st.success("SECCIÓN CARGADA. Bloqueada hasta el envío final; puedes usar EDITAR para corregirla.")
         if st.button("EDITAR", key=f"edit_section_{center_id}_{selected_category}"):
@@ -905,6 +975,10 @@ def center_view(store, token, center_id):
         equipment_panel(
             store, token, center_id, inventory["equipment_counts"], editable=editable,
             history=inventory["equipment"],
+        )
+    elif selected_category == "Registro de partos atendidos":
+        birth_record_panel(
+            store, token, center_id, inventory["birth_record"], editable=editable,
         )
     elif selected_category == "Plantas eléctricas":
         inventory_heading("PLANTAS ELÉCTRICAS", centered=True)
@@ -940,6 +1014,7 @@ def inventory_buttons():
         ("Quirófanos", "Quirófano"),
         ("Equipos médicos especiales", "Equipos médicos especiales"),
         ("PLANTAS ELÉCTRICAS", "Plantas eléctricas"),
+        ("REGISTRO DE PARTOS", "Registro de partos atendidos"),
     ]
     st.session_state.setdefault("inventory_category", "Camas")
     if st.session_state["inventory_category"] in ("Ambulancias", "Vehículos protocolares"):

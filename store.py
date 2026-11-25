@@ -65,6 +65,7 @@ REPORT_SECTIONS = (
 INVENTORY_TABLES = (
     "quantities", "facilities", "facility_counts", "section_loads",
     "vehicle_history", "special_laboratories", "equipment_counts", "plant_counts", "equipment",
+    "birth_records",
 )
 DELETE_ALL_INVENTORY_CONFIRMATION = "ELIMINAR INVENTARIOS DE TODOS LOS CENTROS"
 MILITARY_COMPONENTS = (
@@ -406,6 +407,15 @@ class Store:
                     operational INTEGER NOT NULL CHECK(operational >= 0),
                     unavailable INTEGER NOT NULL CHECK(unavailable >= 0),
                     UNIQUE(center_id, category, kind)
+                );
+                CREATE TABLE IF NOT EXISTS birth_records (
+                    center_id INTEGER PRIMARY KEY REFERENCES centers(id),
+                    natural_military INTEGER NOT NULL CHECK(natural_military >= 0),
+                    natural_affiliated INTEGER NOT NULL CHECK(natural_affiliated >= 0),
+                    natural_pna INTEGER NOT NULL CHECK(natural_pna >= 0),
+                    cesarean_military INTEGER NOT NULL CHECK(cesarean_military >= 0),
+                    cesarean_affiliated INTEGER NOT NULL CHECK(cesarean_affiliated >= 0),
+                    cesarean_pna INTEGER NOT NULL CHECK(cesarean_pna >= 0)
                 );
                 CREATE TABLE IF NOT EXISTS equipment (
                     id INTEGER PRIMARY KEY,
@@ -1363,7 +1373,78 @@ class Store:
             result["vehicle_history"] = [dict(row) for row in connection.execute(
                 "SELECT * FROM vehicle_history WHERE center_id=? ORDER BY id", (center_id,),
             )]
+            result["birth_record"] = connection.execute(
+                "SELECT * FROM birth_records WHERE center_id=?", (center_id,),
+            ).fetchone()
+            if result["birth_record"]:
+                result["birth_record"] = dict(result["birth_record"])
             return result
+
+    def birth_record(self, token: str, center_id: int) -> dict | None:
+        with self.transaction() as connection:
+            user = self._actor(connection, token)
+            if user["role"] != "center":
+                raise AccessError("Solo la cuenta del centro puede consultar este registro.")
+            self._authorize_center(connection, token, center_id)
+            row = connection.execute(
+                "SELECT * FROM birth_records WHERE center_id=?", (center_id,),
+            ).fetchone()
+            return dict(row) if row else None
+
+    def birth_records_summary(self, token: str) -> list[dict]:
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            rows = connection.execute("""
+                SELECT c.id AS "N°", c.name AS "Centro",
+                    COALESCE(b.natural_military, 0) AS "Natural militar",
+                    COALESCE(b.natural_affiliated, 0) AS "Natural afiliado",
+                    COALESCE(b.natural_pna, 0) AS "Natural PNA",
+                    COALESCE(b.cesarean_military, 0) AS "Cesárea militar",
+                    COALESCE(b.cesarean_affiliated, 0) AS "Cesárea afiliado",
+                    COALESCE(b.cesarean_pna, 0) AS "Cesárea PNA",
+                    COALESCE(b.natural_military, 0) + COALESCE(b.natural_affiliated, 0) +
+                        COALESCE(b.natural_pna, 0) + COALESCE(b.cesarean_military, 0) +
+                        COALESCE(b.cesarean_affiliated, 0) + COALESCE(b.cesarean_pna, 0) AS "Total"
+                FROM centers c
+                LEFT JOIN birth_records b ON b.center_id=c.id
+                WHERE c.account_type='health'
+                ORDER BY c.id
+            """).fetchall()
+            return [dict(row) for row in rows]
+
+    def save_birth_records(self, token: str, center_id: int, values: dict) -> None:
+        fields = (
+            "natural_military", "natural_affiliated", "natural_pna",
+            "cesarean_military", "cesarean_affiliated", "cesarean_pna",
+        )
+        if not isinstance(values, dict) or set(values) != set(fields):
+            raise InventoryError("Completa los seis campos del registro de partos.")
+        if any(type(values[field]) is not int or values[field] < 0 or values[field] > 1_000_000
+               for field in fields):
+            raise InventoryError("Las cantidades deben ser enteros entre 0 y 1.000.000.")
+        with self.transaction() as connection:
+            user = self._actor(connection, token)
+            if user["role"] != "center":
+                raise AccessError("Solo la cuenta del centro puede registrar los partos atendidos.")
+            self._authorize_center(connection, token, center_id)
+            now = time.time()
+            self._require_weekly_load(connection, center_id, now)
+            connection.execute("""
+                INSERT INTO birth_records(
+                    center_id, natural_military, natural_affiliated, natural_pna,
+                    cesarean_military, cesarean_affiliated, cesarean_pna
+                ) VALUES(?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(center_id) DO UPDATE SET
+                    natural_military=excluded.natural_military,
+                    natural_affiliated=excluded.natural_affiliated,
+                    natural_pna=excluded.natural_pna,
+                    cesarean_military=excluded.cesarean_military,
+                    cesarean_affiliated=excluded.cesarean_affiliated,
+                    cesarean_pna=excluded.cesarean_pna
+            """, (
+                center_id, *(values[field] for field in fields),
+            ))
+            connection.execute("UPDATE centers SET changed_at=? WHERE id=?", (now, center_id))
 
     def report_snapshot(self, token: str, center_id: int | None = None):
         with self.transaction() as connection:
@@ -1523,6 +1604,8 @@ class Store:
                     "VALUES(?, ?, ?, 0)",
                     (center_id, section, weekly_status(0, now)["period_start"]),
                 )
+                if section == "Registro de partos atendidos":
+                    continue
                 table, kinds = self._section_quantity_types(section)
                 existing_kinds = set()
                 if section == "Camas":
