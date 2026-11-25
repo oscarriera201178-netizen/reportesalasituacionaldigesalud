@@ -393,6 +393,53 @@ def _table(
         _text(page, pymupdf.Rect(36, 522, 924, 538), "OPE: operativo | INOP: inoperativo | 0: sin unidades registradas", 8)
 
 
+def generate_birth_pdf(store, token, center_id=None, year=None, month=None):
+    year = int(year or datetime.now(REPORT_TIMEZONE).year)
+    month = int(month or datetime.now(REPORT_TIMEZONE).month)
+    month_names = (
+        "ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO",
+        "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE",
+    )
+    timestamp = datetime.now(REPORT_TIMEZONE).strftime("Generado: %d/%m/%Y %H:%M (hora de Venezuela)")
+    groups = (
+        "PARTO NATURAL\nMILITAR", "PARTO NATURAL\nAFILIADO", "PARTO NATURAL\nPNA",
+        "CESÁREA\nMILITAR", "CESÁREA\nAFILIADO", "CESÁREA\nPNA",
+    )
+    with pymupdf.open() as doc:
+        if center_id is not None:
+            week_rows = store.birth_week_records(token, center_id, year, month)
+            centers = store.centers(token)
+            center = next((item for item in centers if item["id"] == center_id), None)
+            name = center["name"] if center else f"Centro {center_id}"
+            totals = [0] * 6
+            rows = []
+            for week_row in week_rows:
+                cells = [
+                    week_row["natural_military"], week_row["natural_affiliated"], week_row["natural_pna"],
+                    week_row["cesarean_military"], week_row["cesarean_affiliated"], week_row["cesarean_pna"],
+                ]
+                rows.append((week_row["period_week"], f"SEMANA {week_row['period_week']}", cells, False))
+                totals = [left + right for left, right in zip(totals, cells)]
+            rows.append(("", "TOTAL", totals, True))
+            title = f"PARTOS ATENDIDOS EN {name.upper()} — {month_names[month - 1]} {year}"
+            _table(doc, title, groups, rows, "", timestamp, title_align=1)
+        else:
+            birth_rows = store.birth_records_summary(token, year, month)
+            rows = []
+            totals = [0] * 6
+            for index, row in enumerate(birth_rows, 1):
+                cells = [
+                    row["Natural militar"], row["Natural afiliado"], row["Natural PNA"],
+                    row["Cesárea militar"], row["Cesárea afiliado"], row["Cesárea PNA"],
+                ]
+                rows.append((index, row["Centro"], cells, False))
+                totals = [left + right for left, right in zip(totals, cells)]
+            rows.append(("", "TOTAL GENERAL", totals, True))
+            title = f"PARTOS ATENDIDOS EN CENTROS DE SALUD — {month_names[month - 1]} {year}"
+            _table(doc, title, groups, rows, "SUMATORIA DE TODOS LOS CENTROS", timestamp, title_align=1)
+        return doc.tobytes(garbage=4, deflate=True)
+
+
 def generate_pdf(
     store, token, center_id=None, *, category=None, kind=None, vehicle_group=None,
     omit_empty=False,

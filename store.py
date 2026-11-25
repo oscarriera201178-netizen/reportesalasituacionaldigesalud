@@ -419,6 +419,20 @@ class Store:
                     cesarean_affiliated INTEGER NOT NULL CHECK(cesarean_affiliated >= 0),
                     cesarean_pna INTEGER NOT NULL CHECK(cesarean_pna >= 0)
                 );
+                CREATE TABLE IF NOT EXISTS birth_week_records (
+                    id INTEGER PRIMARY KEY,
+                    center_id INTEGER NOT NULL REFERENCES centers(id),
+                    period_year INTEGER NOT NULL CHECK(period_year BETWEEN 2026 AND 2100),
+                    period_month INTEGER NOT NULL CHECK(period_month BETWEEN 1 AND 12),
+                    period_week INTEGER NOT NULL CHECK(period_week BETWEEN 1 AND 5),
+                    natural_military INTEGER NOT NULL CHECK(natural_military >= 0),
+                    natural_affiliated INTEGER NOT NULL CHECK(natural_affiliated >= 0),
+                    natural_pna INTEGER NOT NULL CHECK(natural_pna >= 0),
+                    cesarean_military INTEGER NOT NULL CHECK(cesarean_military >= 0),
+                    cesarean_affiliated INTEGER NOT NULL CHECK(cesarean_affiliated >= 0),
+                    cesarean_pna INTEGER NOT NULL CHECK(cesarean_pna >= 0),
+                    UNIQUE(center_id, period_year, period_month, period_week)
+                );
                 CREATE TABLE IF NOT EXISTS equipment (
                     id INTEGER PRIMARY KEY,
                     center_id INTEGER NOT NULL REFERENCES centers(id),
@@ -1391,43 +1405,124 @@ class Store:
                 result["birth_record"] = dict(result["birth_record"])
             return result
 
-    def birth_record(self, token: str, center_id: int) -> dict | None:
+    def birth_record(self, token: str, center_id: int, year: int | None = None, month: int | None = None, week: int | None = None) -> dict | None:
         with self.transaction() as connection:
             user = self._actor(connection, token)
             if user["role"] != "center":
                 raise AccessError("Solo la cuenta del centro puede consultar este registro.")
             self._authorize_center(connection, token, center_id)
+            if year is not None and month is not None:
+                sql = "SELECT * FROM birth_week_records WHERE center_id=? AND period_year=? AND period_month=?"
+                parameters = [center_id, year, month]
+                if week is not None:
+                    sql += " AND period_week=?"
+                    parameters.append(week)
+                sql += " ORDER BY period_week"
+                rows = connection.execute(sql, parameters).fetchall()
+                if rows:
+                    return dict(rows[0])
+            row = connection.execute("""
+                SELECT * FROM birth_week_records
+                WHERE center_id=? ORDER BY period_year DESC, period_month DESC, period_week DESC
+            """, (center_id,)).fetchone()
+            if row:
+                return dict(row)
             row = connection.execute(
                 "SELECT * FROM birth_records WHERE center_id=?", (center_id,),
             ).fetchone()
             return dict(row) if row else None
 
-    def birth_records_summary(self, token: str) -> list[dict]:
+    def birth_week_records(self, token: str, center_id: int, year: int, month: int) -> list[dict]:
+        with self.transaction() as connection:
+            user = self._actor(connection, token)
+            if user["role"] != "center":
+                raise AccessError("Solo la cuenta del centro puede consultar sus registros semanales.")
+            self._authorize_center(connection, token, center_id)
+            rows = connection.execute("""
+                SELECT * FROM birth_week_records
+                WHERE center_id=? AND period_year=? AND period_month=?
+                ORDER BY period_week
+            """, (center_id, year, month)).fetchall()
+            return [dict(row) for row in rows]
+
+    def birth_records_summary(self, token: str, year: int | None = None, month: int | None = None) -> list[dict]:
         with self.transaction() as connection:
             self._actor(connection, token, admin=True)
+            now = datetime.now(REPORT_TIMEZONE)
+            year = year or now.year
+            month = month or now.month
             rows = connection.execute("""
                 SELECT c.id AS "N°", c.name AS "Centro",
-                    COALESCE(b.period_month, 0) AS "Mes",
-                    COALESCE(b.period_year, 0) AS "Año",
-                    COALESCE(b.natural_military, 0) AS "Natural militar",
-                    COALESCE(b.natural_affiliated, 0) AS "Natural afiliado",
-                    COALESCE(b.natural_pna, 0) AS "Natural PNA",
-                    COALESCE(b.cesarean_military, 0) AS "Cesárea militar",
-                    COALESCE(b.cesarean_affiliated, 0) AS "Cesárea afiliado",
-                    COALESCE(b.cesarean_pna, 0) AS "Cesárea PNA",
-                    COALESCE(b.natural_military, 0) + COALESCE(b.natural_affiliated, 0) +
-                        COALESCE(b.natural_pna, 0) + COALESCE(b.cesarean_military, 0) +
-                        COALESCE(b.cesarean_affiliated, 0) + COALESCE(b.cesarean_pna, 0) AS "Total"
+                    ? AS "Año", ? AS "Mes",
+                    COALESCE(SUM(b.natural_military), 0) AS "Natural militar",
+                    COALESCE(SUM(b.natural_affiliated), 0) AS "Natural afiliado",
+                    COALESCE(SUM(b.natural_pna), 0) AS "Natural PNA",
+                    COALESCE(SUM(b.cesarean_military), 0) AS "Cesárea militar",
+                    COALESCE(SUM(b.cesarean_affiliated), 0) AS "Cesárea afiliado",
+                    COALESCE(SUM(b.cesarean_pna), 0) AS "Cesárea PNA",
+                    COALESCE(SUM(b.natural_military + b.natural_affiliated + b.natural_pna
+                        + b.cesarean_military + b.cesarean_affiliated + b.cesarean_pna), 0) AS "Total"
                 FROM centers c
-                LEFT JOIN birth_records b ON b.center_id=c.id
+                LEFT JOIN birth_week_records b
+                    ON b.center_id=c.id AND b.period_year=? AND b.period_month=?
                 WHERE c.account_type='health'
+                GROUP BY c.id, c.name
                 ORDER BY c.id
-            """).fetchall()
+            """, (year, month, year, month)).fetchall()
             return [dict(row) for row in rows]
+
+    def birth_missing_weeks(self, token: str, year: int | None = None, month: int | None = None) -> list[dict]:
+        with self.transaction() as connection:
+            self._actor(connection, token, admin=True)
+            now = datetime.now(REPORT_TIMEZONE)
+            year = year or now.year
+            month = month or now.month
+            centers = connection.execute(
+                "SELECT id, name FROM centers WHERE account_type='health' ORDER BY id",
+            ).fetchall()
+            loaded = {
+                (row["center_id"], row["period_week"])
+                for row in connection.execute("""
+                    SELECT center_id, period_week FROM birth_week_records
+                    WHERE period_year=? AND period_month=?
+                """, (year, month)).fetchall()
+            }
+            weeks = self.birth_month_weeks(year, month, now)
+            alarms = []
+            for center in centers:
+                missing = [week for week in weeks if (center["id"], week) not in loaded]
+                if missing:
+                    alarms.append({
+                        "N°": center["id"], "Centro": center["name"],
+                        "Semanas faltantes": ", ".join(str(week) for week in missing),
+                    })
+            return alarms
+
+    @staticmethod
+    def birth_month_weeks(year: int, month: int, now: datetime | None = None) -> list[int]:
+        now = now or datetime.now(REPORT_TIMEZONE)
+        month_start = datetime(year, month, 1, tzinfo=REPORT_TIMEZONE)
+        if month == 12:
+            month_end = datetime(year + 1, 1, 1, tzinfo=REPORT_TIMEZONE)
+        else:
+            month_end = datetime(year, month + 1, 1, tzinfo=REPORT_TIMEZONE)
+        count = (month_end - month_start).days
+        elapsed_end = min(now, month_end - timedelta(days=1))
+        if elapsed_end.date() < month_start.date():
+            return []
+        if year == now.year and month == 11:
+            return [1, 2, 3, 4, 5]
+        week_numbers = []
+        for week in range(1, 6):
+            start = month_start + timedelta(days=(week - 1) * 7)
+            end = min(month_start + timedelta(days=week * 7), month_end)
+            if start < month_end and start <= elapsed_end:
+                week_numbers.append(week)
+        return week_numbers
 
     def save_birth_records(self, token: str, center_id: int, values: dict) -> None:
         fields = (
-            "period_month", "period_year",
+            "period_month", "period_year", "period_week",
             "natural_military", "natural_affiliated", "natural_pna",
             "cesarean_military", "cesarean_affiliated", "cesarean_pna",
         )
@@ -1435,11 +1530,17 @@ class Store:
             raise InventoryError("Completa los seis campos del registro de partos.")
         month = values.get("period_month")
         year = values.get("period_year")
+        week = values.get("period_week")
         if type(month) is not int or not 1 <= month <= 12:
             raise InventoryError("Selecciona un mes válido entre enero y diciembre.")
-        if type(year) is not int or not 2020 <= year <= 2100:
-            raise InventoryError("Ingresa un año válido entre 2020 y 2100.")
-        quantity_fields = tuple(field for field in fields if field not in ("period_month", "period_year"))
+        if type(year) is not int or not 2026 <= year <= 2100:
+            raise InventoryError("Ingresa un año válido desde 2026.")
+        if type(week) is not int or not 1 <= week <= 5:
+            raise InventoryError("Selecciona una semana válida entre 1 y 5.")
+        now = datetime.now(REPORT_TIMEZONE)
+        if (year, month) < (2026, 1) or (year, month) > (now.year, now.month):
+            raise InventoryError("El período seleccionado aún no está habilitado.")
+        quantity_fields = tuple(field for field in fields if field not in ("period_month", "period_year", "period_week"))
         if any(type(values[field]) is not int or values[field] < 0 or values[field] > 1_000_000
                for field in quantity_fields):
             raise InventoryError("Las cantidades deben ser enteros entre 0 y 1.000.000.")
@@ -1449,16 +1550,13 @@ class Store:
                 raise AccessError("Solo la cuenta del centro puede registrar los partos atendidos.")
             self._authorize_center(connection, token, center_id)
             now = time.time()
-            self._require_weekly_load(connection, center_id, now)
             connection.execute("""
-                INSERT INTO birth_records(
-                    center_id, period_month, period_year,
+                INSERT INTO birth_week_records(
+                    center_id, period_year, period_month, period_week,
                     natural_military, natural_affiliated, natural_pna,
                     cesarean_military, cesarean_affiliated, cesarean_pna
-                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
-                ON CONFLICT(center_id) DO UPDATE SET
-                    period_month=excluded.period_month,
-                    period_year=excluded.period_year,
+                ) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(center_id, period_year, period_month, period_week) DO UPDATE SET
                     natural_military=excluded.natural_military,
                     natural_affiliated=excluded.natural_affiliated,
                     natural_pna=excluded.natural_pna,
@@ -1466,7 +1564,7 @@ class Store:
                     cesarean_affiliated=excluded.cesarean_affiliated,
                     cesarean_pna=excluded.cesarean_pna
             """, (
-                center_id, month, year, *(values[field] for field in quantity_fields),
+                center_id, year, month, week, *(values[field] for field in quantity_fields),
             ))
             connection.execute("UPDATE centers SET changed_at=? WHERE id=?", (now, center_id))
 

@@ -16,6 +16,7 @@ from flask import (
 
 from report import (
     LABORATORY_GROUPS, NO_REPORT_UNITS, SUMMARY_CATEGORIES, center_summary,
+    generate_birth_pdf,
     generate_military_pdf, generate_pdf, report_data, report_types,
 )
 from database import DATABASE_ERRORS
@@ -265,7 +266,10 @@ def create_app(store=None, *, secret_key=None):
         if kind not in options:
             kind = None
         if category == "Registro de partos atendidos":
-            birth_rows = store_obj.birth_records_summary(auth_token)
+            birth_year = int(request.args.get("birth_year", datetime.now(REPORT_TIMEZONE).year))
+            birth_month = int(request.args.get("birth_month", datetime.now(REPORT_TIMEZONE).month))
+            birth_rows = store_obj.birth_records_summary(auth_token, birth_year, birth_month)
+            birth_alarms = store_obj.birth_missing_weeks(auth_token, birth_year, birth_month)
             rows = birth_rows
             center_rows = birth_rows
             options = []
@@ -282,6 +286,9 @@ def create_app(store=None, *, secret_key=None):
             report_category=report_category, center_id=selected_center,
             vehicle_group=vehicle_group, vehicle_groups=VEHICLE_GROUPS,
             options=options, kind=kind, reported=reported, birth_rows=birth_rows,
+            birth_alarms=birth_alarms if category == "Registro de partos atendidos" else [],
+            birth_year=birth_year if category == "Registro de partos atendidos" else datetime.now(REPORT_TIMEZONE).year,
+            birth_month=birth_month if category == "Registro de partos atendidos" else datetime.now(REPORT_TIMEZONE).month,
             report_loaded=REPORT_LOADED,
             period_week=period.isocalendar().week,
             period_start=period.strftime("%d/%m/%Y"),
@@ -745,6 +752,8 @@ def create_app(store=None, *, secret_key=None):
         store_obj.initialize_empty_items(token(), center_id)
         inventory_data = store_obj.inventory(token(), center_id)
         category = request.args.get("section", "Camas")
+        birth_year = int(request.args.get("birth_year", datetime.now(REPORT_TIMEZONE).year))
+        birth_month = int(request.args.get("birth_month", datetime.now(REPORT_TIMEZONE).month))
         if category not in REPORT_CATEGORIES:
             category = "Camas"
         loaded = store_obj.section_loads(token(), center_id)
@@ -768,6 +777,8 @@ def create_app(store=None, *, secret_key=None):
             category=category, rows=rows, presence_items=presence_items,
             birth_record=inventory_data["birth_record"],
             special_labs=special_labs, loaded=loaded.get(category, False),
+            birth_week_records=store_obj.birth_week_records(token(), center_id, birth_year, birth_month) if category == "Registro de partos atendidos" else [],
+            birth_year=birth_year, birth_month=birth_month,
             editable=editable, status=status, missing=missing,
             vehicle_groups=VEHICLE_GROUPS, states=STATES,
             vehicle_kinds=[kind for group in VEHICLE_GROUPS.values() for kind in group],
@@ -788,6 +799,13 @@ def create_app(store=None, *, secret_key=None):
         selected = request.args.get("category", "")
         if selected not in REPORT_CATEGORIES.values():
             abort(400, "Categoría de informe no válida.")
+        if selected == "Registro de partos atendidos":
+            birth_year = int(request.args.get("birth_year", datetime.now(REPORT_TIMEZONE).year))
+            birth_month = int(request.args.get("birth_month", datetime.now(REPORT_TIMEZONE).month))
+            data = generate_birth_pdf(get_store(), token(), center_id, birth_year, birth_month)
+            return send_file(io.BytesIO(data), as_attachment=True,
+                download_name=f"Partos_{birth_year}_{birth_month:02d}_{center_id or 'todos'}.pdf",
+                mimetype="application/pdf")
         data = generate_pdf(get_store(), token(), center_id, category=selected)
         return send_file(
             io.BytesIO(data), as_attachment=True,
@@ -882,7 +900,7 @@ def create_app(store=None, *, secret_key=None):
             flash(REPORT_LOADED, "success")
         elif action == "load" and section == "Registro de partos atendidos":
             fields = (
-                "period_month", "period_year",
+                "period_month", "period_year", "period_week",
                 "natural_military", "natural_affiliated", "natural_pna",
                 "cesarean_military", "cesarean_affiliated", "cesarean_pna",
             )

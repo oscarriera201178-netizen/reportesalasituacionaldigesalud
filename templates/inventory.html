@@ -32,12 +32,17 @@
         <label>Mes
           <select name="period_month" required {% if not editable %}disabled{% endif %}>
             {% for number, name in ((1,"Enero"),(2,"Febrero"),(3,"Marzo"),(4,"Abril"),(5,"Mayo"),(6,"Junio"),(7,"Julio"),(8,"Agosto"),(9,"Septiembre"),(10,"Octubre"),(11,"Noviembre"),(12,"Diciembre")) %}
-              <option value="{{ number }}" {% if birth_record and birth_record.period_month == number %}selected{% endif %}>{{ name }}</option>
+              <option value="{{ number }}" {% if birth_month == number %}selected{% endif %}>{{ name }}</option>
             {% endfor %}
           </select>
         </label>
         <label>Año
-          <input type="number" name="period_year" min="2020" max="2100" value="{{ birth_record.period_year if birth_record else 2026 }}" required {% if not editable %}disabled{% endif %}>
+          <input type="number" name="period_year" min="2026" max="2100" value="{{ birth_year }}" required {% if not editable %}disabled{% endif %}>
+        </label>
+        <label>Semana
+          <select name="period_week" required {% if not editable %}disabled{% endif %}>
+            {% for week in range(1, 6) %}<option value="{{ week }}">Semana {{ week }}</option>{% endfor %}
+          </select>
         </label>
       </div>
       <div class="table-wrap">
@@ -202,7 +207,7 @@
       </form>
     {% endif %}
   {% endif %}
-  <a class="button button-muted" href="{{ url_for('download_center_report', center_id=center.id, category=pdf_category) }}">Descargar PDF de esta sección</a>
+  <a class="button button-muted" href="{{ url_for('download_center_report', center_id=center.id, category=pdf_category, birth_year=birth_year, birth_month=birth_month) }}">Descargar PDF de esta sección</a>
 </section>
 <script>
 document.querySelectorAll("[data-presence-card]").forEach((card) => {

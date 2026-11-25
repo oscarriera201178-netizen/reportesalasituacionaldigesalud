@@ -1397,6 +1397,7 @@ class StoreTests(unittest.TestCase):
         values = {
             "period_month": 11,
             "period_year": 2026,
+            "period_week": 1,
             "natural_military": 2,
             "natural_affiliated": 3,
             "natural_pna": 1,
@@ -1410,7 +1411,7 @@ class StoreTests(unittest.TestCase):
             self.store.save_birth_records(self.center, self.north, {**values, "natural_pna": -1})
         self.store.save_birth_records(self.center, self.north, values)
         self.assertEqual(self.store.birth_record(self.center, self.north)["natural_pna"], 1)
-        summary = self.store.birth_records_summary(self.admin)
+        summary = self.store.birth_records_summary(self.admin, 2026, 11)
         north = next(row for row in summary if row["N°"] == self.north)
         self.assertEqual(north["Natural PNA"], 1)
         self.assertEqual(north["Total"], 21)

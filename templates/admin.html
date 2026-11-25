@@ -30,6 +30,18 @@
         {% endfor %}
       </select>
     </label>
+    {% if category == "Registro de partos atendidos" %}
+      <label>Año
+        <input type="number" name="birth_year" min="2026" max="2100" value="{{ birth_year }}" onchange="this.form.submit()">
+      </label>
+      <label>Mes
+        <select name="birth_month" onchange="this.form.submit()">
+          {% for number, name in ((1,"Enero"),(2,"Febrero"),(3,"Marzo"),(4,"Abril"),(5,"Mayo"),(6,"Junio"),(7,"Julio"),(8,"Agosto"),(9,"Septiembre"),(10,"Octubre"),(11,"Noviembre"),(12,"Diciembre")) %}
+            <option value="{{ number }}" {% if birth_month == number %}selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    {% endif %}
     {% if report_category == "Todos los vehículos" %}
       <label>Grupo de vehículos
         <select name="group" onchange="this.form.submit()">
@@ -64,6 +76,13 @@
     </table>
   </div>
   {% endif %}
+  {% if category == "Registro de partos atendidos" and birth_alarms %}
+  <div class="notice notice-error"><strong>ALERTA: centros con semanas sin cargar</strong>
+    <ul>{% for alarm in birth_alarms %}<li><strong>{{ alarm['N°'] }}. {{ alarm.Centro }}:</strong> semanas {{ alarm['Semanas faltantes'] }}</li>{% endfor %}</ul>
+  </div>
+  {% elif category == "Registro de partos atendidos" %}
+  <div class="notice notice-success">Todas las semanas habilitadas están cargadas para el período seleccionado.</div>
+  {% endif %}
   <h3>Detalle por centro de salud</h3>
   {% if center_rows %}
     <div class="table-wrap">
@@ -75,7 +94,7 @@
   {% else %}
     <p>{{ no_report_units }}</p>
   {% endif %}
-  <a class="button button-primary" href="{{ url_for('download_report', category=category, center=center_id, group=vehicle_group or '', kind=kind or '') }}">Generar reporte PDF</a>
+  <a class="button button-primary" href="{{ url_for('download_report', category=category, center=center_id, group=vehicle_group or '', kind=kind or '', birth_year=birth_year, birth_month=birth_month) }}">Generar reporte PDF</a>
 </section>
 <section class="panel">
   <h2>Estado semanal</h2>
