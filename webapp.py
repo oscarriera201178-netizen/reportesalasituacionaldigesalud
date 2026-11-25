@@ -40,7 +40,6 @@ REPORT_CATEGORIES = {
     "Quirófano": "Quirófanos",
     "Equipos médicos especiales": "Equipos médicos especiales",
     "Plantas eléctricas": "Plantas eléctricas",
-    "Registro de partos atendidos": "Registro de partos atendidos",
 }
 SECTION_LABELS = {
     "Camas": "Camas hospitalarias",

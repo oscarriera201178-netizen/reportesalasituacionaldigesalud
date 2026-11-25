@@ -871,7 +871,6 @@ REPORT_CATEGORIES = {
     "Quirófano": "Quirófanos",
     "Equipos médicos especiales": "Equipos médicos especiales",
     "Plantas eléctricas": "Plantas eléctricas",
-    "Registro de partos atendidos": "Registro de partos atendidos",
 }
 
 
@@ -1014,7 +1013,6 @@ def inventory_buttons():
         ("Quirófanos", "Quirófano"),
         ("Equipos médicos especiales", "Equipos médicos especiales"),
         ("PLANTAS ELÉCTRICAS", "Plantas eléctricas"),
-        ("REGISTRO DE PARTOS", "Registro de partos atendidos"),
     ]
     st.session_state.setdefault("inventory_category", "Camas")
     if st.session_state["inventory_category"] in ("Ambulancias", "Vehículos protocolares"):
